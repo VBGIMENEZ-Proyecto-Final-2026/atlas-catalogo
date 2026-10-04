@@ -1,0 +1,45 @@
+name: Bug
+description: Algo no funciona como debería
+title: "[componente] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: componente
+    attributes:
+      label: Componente
+      options:
+        - atlas
+        - cronos
+        - hermes
+        - docs
+        - infra
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducir
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Comportamiento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportamiento actual
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs relevantes
+      description: "Sin secretos: borrá tokens, passwords, IPs y credenciales antes de pegar."
+      render: shell

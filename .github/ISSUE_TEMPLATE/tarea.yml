@@ -1,0 +1,38 @@
+name: Tarea
+description: Unidad de trabajo del backlog
+title: "[componente] "
+labels: ["tarea"]
+body:
+  - type: dropdown
+    id: componente
+    attributes:
+      label: Componente
+      options:
+        - atlas
+        - cronos
+        - hermes
+        - docs
+        - infra
+    validations:
+      required: true
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Descripción
+      description: Qué hay que hacer y por qué (1-3 líneas).
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      value: |
+        - [ ] 
+        - [ ] Tests automatizados que lo cubren
+    validations:
+      required: true
+  - type: textarea
+    id: referencias
+    attributes:
+      label: Referencias y dependencias
+      description: Sección del enunciado o contrato, e issues que bloquean esta tarea.

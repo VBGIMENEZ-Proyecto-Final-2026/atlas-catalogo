@@ -1,0 +1,31 @@
+name: Consulta al profe
+description: Duda o decisión para llevar a la reunión quincenal
+title: "[consulta] "
+labels: ["consulta"]
+body:
+  - type: textarea
+    id: pregunta
+    attributes:
+      label: Pregunta
+      description: Qué necesito que el profe confirme o decida.
+    validations:
+      required: true
+  - type: textarea
+    id: opciones
+    attributes:
+      label: Opciones consideradas
+      description: Alternativas, con pros y contras de cada una.
+    validations:
+      required: true
+  - type: textarea
+    id: impacto
+    attributes:
+      label: Impacto y qué bloquea
+      description: Qué issues o componentes quedan frenados hasta tener respuesta.
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decisión del profe
+      description: Completar después de la reunión (fecha y resumen).
