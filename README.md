@@ -13,3 +13,15 @@ cp .env.example .env   # .env está ignorado por git
 ```
 
 Completar los valores con la respuesta de la cuenta técnica de la cátedra. Los dos backends comparten el mismo set de variables `CATEDRA_*`. Nunca commitear `.env`, tokens ni IPs. Convención completa en `alejandria-docs`.
+
+## Base de datos local
+
+PostgreSQL con Docker Compose. Requiere las variables `ATLAS_DB_*` del `.env`.
+
+```bash
+docker compose up -d      # levanta la base (puerto 5433 en localhost)
+docker compose ps         # el estado debe pasar a "healthy"
+docker compose down       # apaga y conserva los datos (-v los borra)
+```
+
+La base solo escucha en `127.0.0.1`. No usar H2, SQLite ni bases embebidas. Las migraciones de este servicio son propias y no tocan la base del otro.

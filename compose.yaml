@@ -1,0 +1,23 @@
+# Base de datos local de atlas. Las variables salen del .env (ver .env.example).
+# Escucha solo en 127.0.0.1: no se expone a la red ZeroTier.
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: atlas-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ATLAS_DB_NAME:?definir ATLAS_DB_NAME en .env}
+      POSTGRES_USER: ${ATLAS_DB_USER:?definir ATLAS_DB_USER en .env}
+      POSTGRES_PASSWORD: ${ATLAS_DB_PASSWORD:?definir ATLAS_DB_PASSWORD en .env}
+    ports:
+      - "127.0.0.1:${ATLAS_DB_PORT:-5433}:5432"
+    volumes:
+      - atlas-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  atlas-db-data:
