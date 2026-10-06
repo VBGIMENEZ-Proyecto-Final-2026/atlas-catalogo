@@ -4,6 +4,29 @@ Servicio backend (Java + Spring Boot) responsable de mantener la copia local aut
 
 Documentación, contratos y plantillas: [alejandria-docs](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/tree/main/alejandria-docs).
 
+## Arquitectura
+
+El servicio lee de la cátedra (snapshot por REST, metadata y cambios en Redis, avisos por Kafka), guarda la copia local en su propia base y expone búsqueda y agenda por una API protegida con JWT.
+
+```text
+   ┌─────────────── Cátedra ───────────────┐
+   │     REST        Redis        Kafka    │
+   └─────┬──────────────┬──────────────┬───┘
+         │ snapshot     │ metadata y   │ CatalogUpdated
+         │ completo     │ cambios      │ aviso de versión nueva
+         ▼              ▼              ▼
+   ┌───────────────────────────────────────┐
+   │             atlas-catalogo            │
+   │   sync completa  ·  sync incremental  │
+   │ búsqueda y filtros sobre datos locales│
+   └─────┬─────────────────────────────┬───┘
+         │                             │ API protegida con JWT
+         ▼                             ├───────► hermes-app (búsqueda)
+   PostgreSQL propia                   └───────► cronos-turnos (agenda)
+```
+
+Vista de conjunto de los cuatro repos: [alejandria-docs](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/tree/main/alejandria-docs).
+
 ## Configuración
 
 Las variables de entorno se declaran en `.env.example` (versionado, con placeholders). Para trabajar en local:
