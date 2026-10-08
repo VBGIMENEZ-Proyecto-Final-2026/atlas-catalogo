@@ -48,3 +48,48 @@ docker compose down       # apaga y conserva los datos (-v los borra)
 ```
 
 La base solo escucha en `127.0.0.1`. No usar H2, SQLite ni bases embebidas. Las migraciones de este servicio son propias y no tocan la base del otro.
+
+## Requisitos
+
+- JDK 25 (el build usa un toolchain de Java 25).
+- Docker (o Podman) para la base local y para los tests con Testcontainers.
+- No hace falta instalar Gradle: se usa el wrapper (`./gradlew`).
+
+## Ejecutar
+
+```bash
+cp .env.example .env      # una sola vez; completar ATLAS_DB_PASSWORD
+docker compose up -d      # base local
+./gradlew bootRun         # arranca la aplicación
+curl localhost:8080/actuator/health   # {"status":"UP", ...}
+```
+
+La aplicación lee el `.env` local (`spring.config.import`) o, si no existe, las variables de entorno. La base se conecta con `ATLAS_DB_*`; el único endpoint de Actuator expuesto es `/actuator/health`. Todavía no hay tablas: Flyway está configurado en `src/main/resources/db/migration` y avisa que no encuentra migraciones.
+
+## Tests
+
+```bash
+./gradlew build           # compila, corre los tests y las reglas de arquitectura
+```
+
+- `AtlasCatalogoApplicationTests`: arranca la aplicación contra PostgreSQL con Testcontainers y consulta `/actuator/health`. Necesita un motor de contenedores.
+- `ArquitecturaTest`: reglas de dependencia de ArchUnit (ADR 0003).
+
+Con Podman rootless hay que apuntar Testcontainers al socket y desactivar Ryuk:
+
+```bash
+export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+export TESTCONTAINERS_RYUK_DISABLED=true
+```
+
+## Estructura de paquetes
+
+Paquete base `ar.edu.um.atlas`, según el [ADR 0003](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/adr/0003-arquitectura.md):
+
+| Paquete | Contenido |
+|---|---|
+| `domain` | Entidades JPA y reglas puras; sin Spring |
+| `application` | Casos de uso; `port.out` (puertos hacia la cátedra) y `repository` (Spring Data) |
+| `adapters.in` | Web y Kafka |
+| `adapters.out` | Clientes REST y Redis de la cátedra |
+| `config` | Configuración de Spring |

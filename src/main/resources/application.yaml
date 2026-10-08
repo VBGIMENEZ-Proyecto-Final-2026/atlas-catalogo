@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: atlas-catalogo
+  # Lee el .env local (ignorado por git) si existe; en CI o con variables de entorno reales no hace falta.
+  config:
+    import: "optional:file:.env[.properties]"
+  datasource:
+    url: jdbc:postgresql://${ATLAS_DB_HOST:localhost}:${ATLAS_DB_PORT:5433}/${ATLAS_DB_NAME:atlas}
+    username: ${ATLAS_DB_USER:atlas}
+    password: ${ATLAS_DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
