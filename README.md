@@ -66,6 +66,20 @@ curl localhost:8080/actuator/health   # {"status":"UP", ...}
 
 La aplicación lee el `.env` local (`spring.config.import`) o, si no existe, las variables de entorno. La base se conecta con `ATLAS_DB_*`; el único endpoint de Actuator expuesto es `/actuator/health`. El esquema lo crea Flyway al arrancar, desde las migraciones de `src/main/resources/db/migration` (`V1__esquema_catalogo.sql`: `professional_category`, `professional`, `weekly_schedule` y `sync_state`, según el modelo de datos de `alejandria-docs`). Hibernate corre con `ddl-auto=validate`: si una entidad no coincide con el esquema, la aplicación no arranca. Las entidades están en `domain` y los repositorios en `application.repository`.
 
+### Cliente REST de la cátedra
+
+La aplicación pide el snapshot del catálogo a la cátedra (`GET /api/synchronization/snapshot`) con el JWT técnico como `Bearer`. Sin las dos variables obligatorias no arranca y el mensaje dice cuál falta:
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `CATEDRA_REST_BASE_URL` | sí | URL base de la API de la cátedra (`http` o `https`). |
+| `CATEDRA_ID_TOKEN` | sí | JWT técnico de la cuenta de la cátedra. No se escribe en logs ni mensajes. Si vence, se rota en el `.env`. |
+| `CATEDRA_REST_CONNECT_TIMEOUT` | no | Timeout de conexión. Por defecto `3s`. |
+| `CATEDRA_REST_READ_TIMEOUT` | no | Timeout de lectura. Por defecto `30s`: el snapshot es una sola respuesta que puede ser grande. |
+| `CATEDRA_REST_MAX_RETRIES` | no | Reintentos tras el primer intento. Por defecto `2`, con espera de 500 ms que se duplica hasta 5 s. |
+
+Solo se reintenta ante fallas transitorias (error de red, timeout y `503`). Un `401` o `403` indica que el token es inválido o venció y no se reintenta. No se siguen redirecciones, para no reenviar el token a otro destino. El resto de las variables `CATEDRA_*` (Redis y Kafka) las declara cada cliente cuando se implementa.
+
 ## Tests
 
 ```bash
@@ -73,6 +87,8 @@ La aplicación lee el `.env` local (`spring.config.import`) o, si no existe, las
 ```
 
 - `AtlasCatalogoApplicationTests`: arranca la aplicación contra PostgreSQL con Testcontainers y consulta `/actuator/health`. Necesita un motor de contenedores.
+- `PersistenciaCatalogoTest` y `CandadoSyncStateTest`: esquema, entidades, *upserts* y candado contra PostgreSQL real.
+- `CatedraRestSnapshotSourceTest` y `CatedraPropertiesTest`: el cliente REST contra un servidor local que simula a la cátedra (snapshot, errores, reintentos, timeouts) y la validación de las variables al arrancar. No llaman a la cátedra real.
 - `ArquitecturaTest`: reglas de dependencia de ArchUnit (ADR 0003).
 
 Con Podman rootless hay que apuntar Testcontainers al socket y desactivar Ryuk:
