@@ -64,7 +64,7 @@ docker compose up -d      # base local
 curl localhost:8080/actuator/health   # {"status":"UP", ...}
 ```
 
-La aplicación lee el `.env` local (`spring.config.import`) o, si no existe, las variables de entorno. La base se conecta con `ATLAS_DB_*`; el único endpoint de Actuator expuesto es `/actuator/health`. Todavía no hay tablas: Flyway está configurado en `src/main/resources/db/migration` y avisa que no encuentra migraciones.
+La aplicación lee el `.env` local (`spring.config.import`) o, si no existe, las variables de entorno. La base se conecta con `ATLAS_DB_*`; el único endpoint de Actuator expuesto es `/actuator/health`. El esquema lo crea Flyway al arrancar, desde las migraciones de `src/main/resources/db/migration` (`V1__esquema_catalogo.sql`: `professional_category`, `professional`, `weekly_schedule` y `sync_state`, según el modelo de datos de `alejandria-docs`). Hibernate corre con `ddl-auto=validate`: si una entidad no coincide con el esquema, la aplicación no arranca. Las entidades están en `domain` y los repositorios en `application.repository`.
 
 ## Tests
 
