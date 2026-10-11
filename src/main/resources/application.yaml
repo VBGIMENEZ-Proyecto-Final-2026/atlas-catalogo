@@ -16,6 +16,15 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+catedra:
+  rest:
+    base-url: ${CATEDRA_REST_BASE_URL:}
+    id-token: ${CATEDRA_ID_TOKEN:}
+    connect-timeout: ${CATEDRA_REST_CONNECT_TIMEOUT:3s}
+    read-timeout: ${CATEDRA_REST_READ_TIMEOUT:30s}
+    retry:
+      max-retries: ${CATEDRA_REST_MAX_RETRIES:2}
+
 management:
   endpoints:
     web:
