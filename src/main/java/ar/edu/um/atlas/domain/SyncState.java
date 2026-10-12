@@ -55,6 +55,31 @@ public class SyncState {
     protected SyncState() {
     }
 
+    /**
+     * Registra un snapshot aplicado: la versión local pasa a ser exactamente {@code version} (aunque sea
+     * menor que la anterior, en una reconstrucción) y se limpia el error vigente.
+     */
+    public void registrarSnapshotAplicado(long version, SnapshotReason reason, Instant now) {
+        this.localVersion = version;
+        this.status = SyncStatus.IDLE;
+        this.lastResult = SyncResult.SNAPSHOT;
+        this.lastSnapshotReason = reason;
+        this.lastSyncAt = now;
+        this.lastErrorCode = null;
+        this.lastErrorMessage = null;
+        this.lastErrorAt = null;
+        this.updatedAt = now;
+    }
+
+    /** Registra una corrida fallida. No toca la versión local ni el último resultado exitoso. */
+    public void registrarError(String code, String message, Instant now) {
+        this.status = SyncStatus.ERROR;
+        this.lastErrorCode = code;
+        this.lastErrorMessage = message;
+        this.lastErrorAt = now;
+        this.updatedAt = now;
+    }
+
     public Short getId() {
         return id;
     }

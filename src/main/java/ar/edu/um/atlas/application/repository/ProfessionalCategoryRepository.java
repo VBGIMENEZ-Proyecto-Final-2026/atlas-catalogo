@@ -29,4 +29,12 @@ public interface ProfessionalCategoryRepository extends JpaRepository<Profession
     void upsert(@Param("id") Long id, @Param("name") String name, @Param("description") String description,
                 @Param("enabled") boolean enabled, @Param("createdAt") Instant createdAt,
                 @Param("updatedAt") Instant updatedAt);
+
+    /**
+     * Deshabilita las filas habilitadas cuyo ID no está en {@code ids} (nunca borra, decisión C). Con un
+     * arreglo vacío deshabilita todas. No toca {@code updated_at}: son valores de la cátedra (decisión J).
+     */
+    @Modifying
+    @Query(nativeQuery = true, value = "UPDATE professional_category SET enabled = false WHERE enabled AND id <> ALL (:ids)")
+    int disableAllExcept(@Param("ids") Long[] ids);
 }

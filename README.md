@@ -80,6 +80,14 @@ La aplicación pide el snapshot del catálogo a la cátedra (`GET /api/synchroni
 
 Solo se reintenta ante fallas transitorias (error de red, timeout y `503`). Un `401` o `403` indica que el token es inválido o venció y no se reintenta. No se siguen redirecciones, para no reenviar el token a otro destino. El resto de las variables `CATEDRA_*` (Redis y Kafka) las declara cada cliente cuando se implementa.
 
+### Sincronización completa al arrancar
+
+Con la base vacía (sin versión local en `sync_state`), al terminar de arrancar la aplicación ejecuta `ApplySnapshot` con el motivo `BASE_VACIA`: pide el snapshot a la cátedra y lo aplica en una sola transacción, con la fila de `sync_state` tomada con `FOR UPDATE` (dos corridas no se pisan). Lo que ya no viene en el snapshot se deshabilita, nunca se borra, y la versión local queda igual a la del snapshot. Si algo falla, la transacción se revierte, `sync_state` queda en `ERROR` con un código (`CATEDRA_NO_DISPONIBLE`, `CATEDRA_CREDENCIAL_RECHAZADA`, `CATEDRA_RESPUESTA_INVALIDA` o `SNAPSHOT_NO_APLICABLE`) y la aplicación sigue arrancada. Con una versión local no se pide nada.
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `ATLAS_SYNC_ON_STARTUP` | no | `true` por defecto. Con `false` la aplicación no pide el snapshot al arrancar (propiedad `atlas.sync.on-startup`). Los tests de contexto la apagan. |
+
 ## Tests
 
 ```bash
@@ -89,6 +97,7 @@ Solo se reintenta ante fallas transitorias (error de red, timeout y `503`). Un `
 - `AtlasCatalogoApplicationTests`: arranca la aplicación contra PostgreSQL con Testcontainers y consulta `/actuator/health`. Necesita un motor de contenedores.
 - `PersistenciaCatalogoTest` y `CandadoSyncStateTest`: esquema, entidades, *upserts* y candado contra PostgreSQL real.
 - `CatedraRestSnapshotSourceTest` y `CatedraPropertiesTest`: el cliente REST contra un servidor local que simula a la cátedra (snapshot, errores, reintentos, timeouts) y la validación de las variables al arrancar. No llaman a la cátedra real.
+- `SincronizacionCompletaTest` y `ArranqueConSincronizacionTest`: la sincronización completa contra PostgreSQL real con la cátedra simulada (inicialización, reconstrucción, bajas, repetición, *rollback*, errores por código, corridas en paralelo y arranque con y sin versión local).
 - `ArquitecturaTest`: reglas de dependencia de ArchUnit (ADR 0003).
 
 Con Podman rootless hay que apuntar Testcontainers al socket y desactivar Ryuk:
@@ -105,7 +114,7 @@ Paquete base `ar.edu.um.atlas`, según el [ADR 0003](https://github.com/VBGIMENE
 | Paquete | Contenido |
 |---|---|
 | `domain` | Entidades JPA y reglas puras; sin Spring |
-| `application` | Casos de uso; `port.out` (puertos hacia la cátedra) y `repository` (Spring Data) |
-| `adapters.in` | Web y Kafka |
+| `application` | Casos de uso (`sync`); `port.out` (puertos hacia la cátedra) y `repository` (Spring Data) |
+| `adapters.in` | Arranque (`startup`), web y Kafka |
 | `adapters.out` | Clientes REST y Redis de la cátedra |
 | `config` | Configuración de Spring |
