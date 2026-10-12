@@ -112,7 +112,7 @@ El caso de uso `SyncCatalog` mantiene la copia local al día. Compara la versió
 - **Snapshot.** `ApplySnapshot` pide el snapshot a la cátedra y lo aplica en una sola transacción, con la fila de `sync_state` tomada con `FOR UPDATE` (dos corridas no se pisan). Lo que ya no viene se deshabilita, nunca se borra, y la versión local queda igual a la del snapshot.
 - **Incremental.** `ApplyIncremental` aplica cada versión en su propia transacción: lee `changes:{v}` y el estado vigente de cada ID afectado en Redis, hace *upsert* en orden (categorías, profesionales, horarios) y avanza la versión local solo si todo salió bien. Repetir una versión deja la copia igual. Un ID de `changes` que ya no está en Redis se deshabilita localmente (y se avisa en el log); con un segundo ID ausente en la corrida, falta `changes:{v}`, una referencia rota o datos de Redis que no se pueden interpretar, la versión en curso se revierte y se reconstruye con un snapshot.
 - **Fallas de integración.** Si Redis o la cátedra no responden o rechazan la credencial, no se escala a snapshot: `sync_state` queda en `ERROR` con un código (`CATEDRA_NO_DISPONIBLE`, `CATEDRA_CREDENCIAL_RECHAZADA`, `CATEDRA_RESPUESTA_INVALIDA`, `SNAPSHOT_NO_APLICABLE` o `INCREMENTAL_NO_APLICABLE`), la copia queda como estaba y la siguiente verificación lo reintenta sola. Un éxito posterior limpia el error.
-- **Disparadores.** Al terminar de arrancar la aplicación corre la sincronización (con la base vacía arma la copia; con versión local recoge lo que se perdió mientras estaba apagada) y, después, una verificación periódica de la versión, que además recupera avisos perdidos. Si la cátedra falla en el arranque, la aplicación arranca igual. Una verificación sin cambios se registra en `sync_state` como `NOOP`.
+- **Disparadores.** Al terminar de arrancar la aplicación corre la sincronización (con la base vacía arma la copia; con versión local recoge lo que se perdió mientras estaba apagada), después una verificación periódica de la versión, que además recupera avisos perdidos, y el aviso `CatalogUpdated` de Kafka (ver abajo). Si la cátedra falla en el arranque, la aplicación arranca igual. Una verificación sin cambios se registra en `sync_state` como `NOOP`.
 
 | Variable | Obligatoria | Descripción |
 |---|---|---|
@@ -120,8 +120,27 @@ El caso de uso `SyncCatalog` mantiene la copia local al día. Compara la versió
 | `ATLAS_SYNC_PERIODIC_CHECK` | no | `true` por defecto. Con `false` no hay verificación periódica (`atlas.sync.periodic-check`). Los tests de contexto la apagan. |
 | `ATLAS_SYNC_CHECK_INTERVAL` | no | Espera entre verificaciones, `60s` por defecto. Es una espera fija entre el fin de una corrida y el comienzo de la siguiente: nunca se superponen. |
 | `ATLAS_SYNC_MAX_VERSIONS_PER_RUN` | no | Máximo de versiones que se aplican en una corrida, `1000` por defecto; si faltan más, la siguiente verificación continúa. |
+| `ATLAS_SYNC_KAFKA_ENABLED` | no | `true` por defecto. Con `false` no se crea el consumidor de Kafka y no se exigen sus variables (`atlas.sync.kafka.enabled`). Los tests de contexto lo apagan. |
 
-El aviso de Kafka (`CatalogUpdated`) todavía no está implementado: será otro disparador del mismo caso de uso, que nunca decide con el número de versión del evento.
+### Consumidor de Kafka (aviso de versión nueva)
+
+La cátedra publica `CatalogUpdated` en el topic del catálogo cada vez que hay una versión nueva. El consumidor lo usa como un disparador más: cada evento ejecuta el mismo caso de uso de sincronización, así que una versión nueva se aplica en segundos en vez de esperar la próxima verificación periódica. El evento **solo avisa**: el plan sale de comparar la versión local con la metadata de Redis, nunca del `newVersion` del evento. Por eso un evento duplicado, atrasado o adelantado termina en `Noop` y no se guarda ningún `eventId`.
+
+- **Confirmación del *offset*.** Manual y un mensaje por vez: se confirma solo después de que la corrida terminó sin excepción.
+- **Mensajes corruptos.** Un mensaje sin valor, que no es un JSON interpretable, de otro `eventType` o sin `newVersion` se registra (sin su cuerpo) y se descarta con su *offset* confirmado: no bloquea el consumo y la verificación periódica cubre el hueco. Los campos desconocidos se ignoran.
+- **Si la sincronización falla** (Redis o la cátedra caídos, credencial rechazada), el mensaje se reintenta con espera creciente y, al agotar los intentos, se descarta con el *offset* confirmado: el error ya quedó en `sync_state` y la verificación periódica lo reintenta sola, así que no se pierde nada y el consumidor no se traba.
+- **Si Kafka no responde**, la aplicación arranca igual: si los servidores existen pero no contestan, el cliente se conecta en segundo plano; si ni siquiera se resuelven, se reintenta arrancar el consumidor cada `CATEDRA_KAFKA_START_RETRY_INTERVAL`. El consumo se reanuda solo.
+- **Grupo nuevo.** Empieza desde lo último (`latest`): el arranque ya sincroniza la copia. Con un grupo que ya tiene *offset* se retoma desde ahí y se recuperan los avisos que llegaron con la aplicación apagada.
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `CATEDRA_KAFKA_BOOTSTRAP_SERVERS` | sí (con el consumidor encendido) | Servidores de Kafka de la cátedra. |
+| `CATEDRA_KAFKA_CATALOG_TOPIC` | sí (con el consumidor encendido) | Topic `catedra.catalog.<groupId>`. |
+| `CATEDRA_KAFKA_CONSUMER_GROUP_ID` | sí (con el consumidor encendido) | Consumer group asignado a la integración. |
+| `CATEDRA_KAFKA_MAX_ATTEMPTS` | no | Intentos totales por mensaje antes de descartarlo, `3` por defecto, con espera de 1 s que se duplica. |
+| `CATEDRA_KAFKA_START_RETRY_INTERVAL` | no | Espera entre intentos de arrancar el consumidor si los servidores no se resuelven, `10s` por defecto. |
+
+No se configura autenticación: la cátedra no documenta una para Kafka. Las demás variables `CATEDRA_KAFKA_*` del `.env.example` (los topics de reservas) no las usa este servicio.
 
 ## Tests
 
@@ -133,6 +152,7 @@ El aviso de Kafka (`CatalogUpdated`) todavía no está implementado: será otro 
 - `PersistenciaCatalogoTest` y `CandadoSyncStateTest`: esquema, entidades, *upserts* y candado contra PostgreSQL real.
 - `CatedraRestSnapshotSourceTest` y `CatedraPropertiesTest`: el cliente REST contra un servidor local que simula a la cátedra (snapshot, errores, reintentos, timeouts) y la validación de las variables al arrancar. No llaman a la cátedra real.
 - `CatedraRedisChangeSourceTest` y `CatedraRedisPropertiesTest`: el cliente Redis contra un Redis real (Testcontainers) con un usuario ACL que solo lee `catedra:sync:*` (metadata, cambios, entidades, datos inválidos, Redis caído, credencial y permisos rechazados) y la validación de las variables al arrancar.
+- `CatalogUpdatedParserTest`, `ResilientConsumerLifecycleTest`, `CatedraKafkaPropertiesTest`, `ConsumidorKafkaTest` y `ConsumidorKafkaInaccesibleTest`: el consumidor de Kafka (interpretación del mensaje, arranque resiliente, variables, y contra un Kafka real con PostgreSQL real: evento nuevo, duplicados, atrasados, mensajes corruptos, falla de la sincronización con reintentos acotados y Kafka inaccesible).
 - `SyncPlannerTest`: una prueba por cada fila de la tabla del planificador y sus bordes, sin Spring ni base de datos.
 - `SincronizacionIncrementalTest`, `SincronizacionConRedisRealTest` y `VerificacionPeriodicaTest`: la sincronización incremental contra PostgreSQL real con la cátedra simulada (versiones en orden, idempotencia, bajas, escaladas a snapshot, *rollback*, fallas de Redis y de credencial, corridas en paralelo, arranque y verificación periódica con el planificador de tareas), y de punta a punta con un Redis real.
 - `SincronizacionCompletaTest` y `ArranqueConSincronizacionTest`: la sincronización completa contra PostgreSQL real con la cátedra simulada (inicialización, reconstrucción, bajas, repetición, *rollback*, errores por código, corridas en paralelo y arranque con y sin versión local).
@@ -153,6 +173,6 @@ Paquete base `ar.edu.um.atlas`, según el [ADR 0003](https://github.com/VBGIMENE
 |---|---|
 | `domain` | Entidades JPA y reglas puras; sin Spring |
 | `application` | Casos de uso (`sync`, con el planificador puro en `sync.plan`); `port.out` (puertos hacia la cátedra: snapshot y cambios) y `repository` (Spring Data) |
-| `adapters.in` | Disparadores de arranque (`startup`) y periódico (`schedule`), web y Kafka |
+| `adapters.in` | Disparadores de arranque (`startup`), periódico (`schedule`) y por aviso de Kafka (`kafka`); web |
 | `adapters.out` | Clientes REST (`rest`) y Redis (`redis`) de la cátedra |
 | `config` | Configuración de Spring |

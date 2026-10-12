@@ -1,6 +1,9 @@
 spring:
   application:
     name: atlas-catalogo
+  autoconfigure:
+    # El consumidor de Kafka se arma a mano con catedra.kafka.*; no se usa spring.kafka.*.
+    exclude: org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration
   # Lee el .env local (ignorado por git) si existe; en CI o con variables de entorno reales no hace falta.
   config:
     import: "optional:file:.env[.properties]"
@@ -38,6 +41,13 @@ catedra:
     command-timeout: ${CATEDRA_REDIS_COMMAND_TIMEOUT:5s}
     retry:
       max-retries: ${CATEDRA_REDIS_MAX_RETRIES:2}
+  kafka:
+    bootstrap-servers: ${CATEDRA_KAFKA_BOOTSTRAP_SERVERS:}
+    catalog-topic: ${CATEDRA_KAFKA_CATALOG_TOPIC:}
+    consumer-group-id: ${CATEDRA_KAFKA_CONSUMER_GROUP_ID:}
+    start-retry-interval: ${CATEDRA_KAFKA_START_RETRY_INTERVAL:10s}
+    retry:
+      max-attempts: ${CATEDRA_KAFKA_MAX_ATTEMPTS:3}
 
 atlas:
   sync:
@@ -48,6 +58,9 @@ atlas:
     check-interval: ${ATLAS_SYNC_CHECK_INTERVAL:60s}
     # Máximo de versiones que se aplican en una corrida; si faltan más, la siguiente verificación continúa.
     max-versions-per-run: ${ATLAS_SYNC_MAX_VERSIONS_PER_RUN:1000}
+    kafka:
+      # Consumidor del aviso CatalogUpdated: otro disparador de la sincronización.
+      enabled: ${ATLAS_SYNC_KAFKA_ENABLED:true}
 
 management:
   endpoints:
