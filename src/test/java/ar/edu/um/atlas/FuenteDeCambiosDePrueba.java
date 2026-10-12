@@ -110,11 +110,12 @@ class FuenteDeCambiosDePrueba implements CatalogChangeSource {
 
     @Override
     public Optional<CatalogMetadata> fetchMetadata() {
+        // Cuenta también las lecturas que fallan: sirve para contar reintentos.
+        int lectura = lecturasDeMetadata.getAndIncrement();
         if (fallaDeMetadata != null) {
             throw fallaDeMetadata;
         }
         List<Optional<CatalogMetadata>> secuencia = metadatas;
-        int lectura = lecturasDeMetadata.getAndIncrement();
         return secuencia.get(Math.min(lectura, secuencia.size() - 1));
     }
 

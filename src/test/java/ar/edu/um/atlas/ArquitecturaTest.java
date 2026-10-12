@@ -50,4 +50,10 @@ class ArquitecturaTest {
             .should().dependOnClassesThat().resideInAnyPackage(
                     "org.springframework..", "..adapters..", "..config..", "..application.repository..",
                     "jakarta.persistence..");
+
+    @ArchTest
+    static final ArchRule kafkaNoDependeDeOtrosAdaptadoresNiDeConfig = noClasses()
+            .that().resideInAPackage("..adapters.in.kafka..")
+            .should().dependOnClassesThat().resideInAnyPackage("..adapters.out..", "..config..",
+                    "..adapters.in.startup..", "..adapters.in.schedule..");
 }
