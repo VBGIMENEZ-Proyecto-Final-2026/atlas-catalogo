@@ -25,6 +25,11 @@ catedra:
     retry:
       max-retries: ${CATEDRA_REST_MAX_RETRIES:2}
 
+atlas:
+  sync:
+    # Con la base vacía (sin versión local) pide el snapshot completo al arrancar.
+    on-startup: ${ATLAS_SYNC_ON_STARTUP:true}
+
 management:
   endpoints:
     web:
