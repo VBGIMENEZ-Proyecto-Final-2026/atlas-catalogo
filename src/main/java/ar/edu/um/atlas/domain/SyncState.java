@@ -71,6 +71,32 @@ public class SyncState {
         this.updatedAt = now;
     }
 
+    /**
+     * Registra una corrida incremental: la versión local avanza a {@code version}. El motivo del último
+     * snapshot se conserva, porque sigue describiendo cómo se armó la copia de base.
+     */
+    public void registrarIncremental(long version, Instant now) {
+        this.localVersion = version;
+        this.status = SyncStatus.IDLE;
+        this.lastResult = SyncResult.INCREMENTAL;
+        this.lastSyncAt = now;
+        this.lastErrorCode = null;
+        this.lastErrorMessage = null;
+        this.lastErrorAt = null;
+        this.updatedAt = now;
+    }
+
+    /** Registra una verificación sin cambios: la versión local no se toca y el error vigente se limpia. */
+    public void registrarNoop(Instant now) {
+        this.status = SyncStatus.IDLE;
+        this.lastResult = SyncResult.NOOP;
+        this.lastSyncAt = now;
+        this.lastErrorCode = null;
+        this.lastErrorMessage = null;
+        this.lastErrorAt = null;
+        this.updatedAt = now;
+    }
+
     /** Registra una corrida fallida. No toca la versión local ni el último resultado exitoso. */
     public void registrarError(String code, String message, Instant now) {
         this.status = SyncStatus.ERROR;

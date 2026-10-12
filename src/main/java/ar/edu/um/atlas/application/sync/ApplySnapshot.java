@@ -2,10 +2,6 @@ package ar.edu.um.atlas.application.sync;
 
 import ar.edu.um.atlas.application.port.out.CatalogSnapshot;
 import ar.edu.um.atlas.application.port.out.CatalogSnapshotSource;
-import ar.edu.um.atlas.application.port.out.CatalogSourceException;
-import ar.edu.um.atlas.application.port.out.CatedraCredentialRejectedException;
-import ar.edu.um.atlas.application.port.out.CatedraInvalidResponseException;
-import ar.edu.um.atlas.application.port.out.CatedraUnavailableException;
 import ar.edu.um.atlas.application.repository.ProfessionalCategoryRepository;
 import ar.edu.um.atlas.application.repository.ProfessionalRepository;
 import ar.edu.um.atlas.application.repository.SyncStateRepository;
@@ -43,34 +39,36 @@ public class ApplySnapshot {
     private final ProfessionalRepository professionals;
     private final WeeklyScheduleRepository schedules;
     private final SyncStateRepository syncState;
+    private final SyncStateRecorder recorder;
     private final TransactionTemplate transaction;
     private final Clock clock;
 
     public ApplySnapshot(CatalogSnapshotSource source, ProfessionalCategoryRepository categories,
                          ProfessionalRepository professionals, WeeklyScheduleRepository schedules,
-                         SyncStateRepository syncState, PlatformTransactionManager transactionManager,
-                         Clock clock) {
+                         SyncStateRepository syncState, SyncStateRecorder recorder,
+                         PlatformTransactionManager transactionManager, Clock clock) {
         this.source = source;
         this.categories = categories;
         this.professionals = professionals;
         this.schedules = schedules;
         this.syncState = syncState;
+        this.recorder = recorder;
         this.transaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
     }
 
     /**
      * Pide el snapshot y lo aplica. Si falla, la copia local queda intacta, {@code sync_state} queda en
-     * {@code ERROR} y se lanza {@link SnapshotSyncException}.
+     * {@code ERROR} y se lanza {@link SyncException}.
      */
     public void run(SnapshotReason reason) {
         try {
             long version = transaction.execute(status -> apply(reason));
             log.info("Snapshot aplicado: versión local {} (motivo {})", version, reason);
         } catch (RuntimeException e) {
-            SyncErrorCode code = classify(e);
-            recordError(code);
-            throw new SnapshotSyncException(code, e);
+            SyncErrorCode code = SyncErrorCode.of(e, SyncErrorCode.SNAPSHOT_NO_APLICABLE);
+            recorder.recordError(code);
+            throw new SyncException(code, e);
         }
     }
 
@@ -92,25 +90,6 @@ public class ApplySnapshot {
 
         state.registrarSnapshotAplicado(snapshot.version(), reason, clock.instant());
         return snapshot.version();
-    }
-
-    private void recordError(SyncErrorCode code) {
-        try {
-            transaction.executeWithoutResult(status ->
-                    syncState.findForUpdate().registrarError(code.name(), code.message(), clock.instant()));
-        } catch (RuntimeException e) {
-            log.error("No se pudo registrar el error {} en sync_state", code, e);
-        }
-    }
-
-    private static SyncErrorCode classify(RuntimeException e) {
-        return switch (e) {
-            case CatedraUnavailableException ignored -> SyncErrorCode.CATEDRA_NO_DISPONIBLE;
-            case CatedraCredentialRejectedException ignored -> SyncErrorCode.CATEDRA_CREDENCIAL_RECHAZADA;
-            case CatedraInvalidResponseException ignored -> SyncErrorCode.CATEDRA_RESPUESTA_INVALIDA;
-            case CatalogSourceException ignored -> SyncErrorCode.CATEDRA_RESPUESTA_INVALIDA;
-            default -> SyncErrorCode.SNAPSHOT_NO_APLICABLE;
-        };
     }
 
     private static <T> Long[] ids(List<T> items, Function<T, Long> id) {

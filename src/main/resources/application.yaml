@@ -41,8 +41,13 @@ catedra:
 
 atlas:
   sync:
-    # Con la base vacía (sin versión local) pide el snapshot completo al arrancar.
+    # Al arrancar corre la sincronización: snapshot con la base vacía, cambios incrementales si hay versión local.
     on-startup: ${ATLAS_SYNC_ON_STARTUP:true}
+    # Verificación periódica de la versión local contra la de la cátedra; recupera avisos perdidos.
+    periodic-check: ${ATLAS_SYNC_PERIODIC_CHECK:true}
+    check-interval: ${ATLAS_SYNC_CHECK_INTERVAL:60s}
+    # Máximo de versiones que se aplican en una corrida; si faltan más, la siguiente verificación continúa.
+    max-versions-per-run: ${ATLAS_SYNC_MAX_VERSIONS_PER_RUN:1000}
 
 management:
   endpoints:
