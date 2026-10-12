@@ -1,13 +1,13 @@
 package ar.edu.um.atlas;
 
-import ar.edu.um.atlas.adapters.in.startup.SnapshotOnStartup;
+import ar.edu.um.atlas.adapters.in.startup.SyncOnStartup;
 import ar.edu.um.atlas.application.port.out.CatalogSnapshot;
 import ar.edu.um.atlas.application.port.out.CatedraCredentialRejectedException;
 import ar.edu.um.atlas.application.port.out.CatedraInvalidResponseException;
 import ar.edu.um.atlas.application.port.out.CatedraUnavailableException;
-import ar.edu.um.atlas.application.repository.SyncStateRepository;
 import ar.edu.um.atlas.application.sync.ApplySnapshot;
-import ar.edu.um.atlas.application.sync.SnapshotSyncException;
+import ar.edu.um.atlas.application.sync.SyncCatalog;
+import ar.edu.um.atlas.application.sync.SyncException;
 import ar.edu.um.atlas.application.sync.SyncErrorCode;
 import ar.edu.um.atlas.domain.Professional;
 import ar.edu.um.atlas.domain.ProfessionalCategory;
@@ -41,7 +41,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * simulada. Sin {@code @Transactional}: la corrida abre y cierra sus propias transacciones.
  */
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, FuenteDeSnapshotDePrueba.Configuracion.class})
+@Import({TestcontainersConfiguration.class, FuenteDeSnapshotDePrueba.Configuracion.class,
+        FuenteDeCambiosDePrueba.Configuracion.class})
 class SincronizacionCompletaTest {
 
     private static final Instant CREADO = Instant.parse("2026-03-01T12:00:00Z");
@@ -49,12 +50,14 @@ class SincronizacionCompletaTest {
 
     @Autowired ApplySnapshot applySnapshot;
     @Autowired FuenteDeSnapshotDePrueba fuente;
-    @Autowired SyncStateRepository syncState;
+    @Autowired FuenteDeCambiosDePrueba redis;
+    @Autowired SyncCatalog syncCatalog;
     @Autowired JdbcClient jdbc;
 
     @BeforeEach
     void baseVacia() {
         fuente.reiniciar();
+        redis.reiniciar();
         jdbc.sql("DELETE FROM weekly_schedule").update();
         jdbc.sql("DELETE FROM professional").update();
         jdbc.sql("DELETE FROM professional_category").update();
@@ -161,7 +164,7 @@ class SincronizacionCompletaTest {
                 List.of(horario(1, 99))));
 
         assertThatThrownBy(() -> applySnapshot.run(SnapshotReason.FUERA_DE_VENTANA))
-                .isInstanceOfSatisfying(SnapshotSyncException.class,
+                .isInstanceOfSatisfying(SyncException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(SyncErrorCode.SNAPSHOT_NO_APLICABLE));
 
         assertThat(jdbc.sql("SELECT name FROM professional_category WHERE id = 1").query(String.class).single())
@@ -186,7 +189,7 @@ class SincronizacionCompletaTest {
         fuente.fallar(new CatedraUnavailableException("sin respuesta", 503, null, null));
 
         assertThatThrownBy(() -> applySnapshot.run(SnapshotReason.NO_VERIFICABLE))
-                .isInstanceOfSatisfying(SnapshotSyncException.class,
+                .isInstanceOfSatisfying(SyncException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(SyncErrorCode.CATEDRA_NO_DISPONIBLE));
 
         assertThat(contarHabilitados("weekly_schedule")).isEqualTo(4);
@@ -268,15 +271,17 @@ class SincronizacionCompletaTest {
     }
 
     @Test
-    void alArrancarConVersionLocalNoPideNada() {
+    void alArrancarConVersionLocalAlDiaNoPideElSnapshot() {
         fuente.devolver(snapshot(5, 2, 3, 4));
         applySnapshot.run(SnapshotReason.BASE_VACIA);
         fuente.reiniciar();
+        redis.metadata(5, 1);
 
         arranque().onReady();
 
         assertThat(fuente.pedidos()).isZero();
         assertThat(estado().get("local_version")).isEqualTo(5L);
+        assertThat(estado().get("last_result")).isEqualTo("NOOP");
     }
 
     @Test
@@ -300,14 +305,14 @@ class SincronizacionCompletaTest {
         assertThat(estado().get("last_snapshot_reason")).isEqualTo(motivo.name());
     }
 
-    private SnapshotOnStartup arranque() {
-        return new SnapshotOnStartup(syncState, applySnapshot);
+    private SyncOnStartup arranque() {
+        return new SyncOnStartup(syncCatalog);
     }
 
     private SyncErrorCode codigoDeLaFalla() {
         try {
             applySnapshot.run(SnapshotReason.BASE_VACIA);
-        } catch (SnapshotSyncException e) {
+        } catch (SyncException e) {
             return e.getErrorCode();
         }
         throw new AssertionError("Se esperaba una falla");

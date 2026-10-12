@@ -37,4 +37,12 @@ public interface ProfessionalCategoryRepository extends JpaRepository<Profession
     @Modifying
     @Query(nativeQuery = true, value = "UPDATE professional_category SET enabled = false WHERE enabled AND id <> ALL (:ids)")
     int disableAllExcept(@Param("ids") Long[] ids);
+
+    /**
+     * Deshabilita las filas habilitadas cuyo ID está en {@code ids} (baja por ID ausente en Redis, decisión
+     * C). No toca {@code updated_at}: son valores de la cátedra (decisión J).
+     */
+    @Modifying
+    @Query(nativeQuery = true, value = "UPDATE professional_category SET enabled = false WHERE enabled AND id = ANY (:ids)")
+    int disableAllIn(@Param("ids") Long[] ids);
 }

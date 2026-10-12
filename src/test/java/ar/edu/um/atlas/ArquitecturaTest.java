@@ -43,4 +43,11 @@ class ArquitecturaTest {
     static final ArchRule restNoDependeDeRedis = noClasses()
             .that().resideInAPackage("..adapters.out.rest..")
             .should().dependOnClassesThat().resideInAnyPackage("..adapters.out.redis..", "..adapters.in..");
+
+    @ArchTest
+    static final ArchRule planificadorPuro = noClasses()
+            .that().resideInAPackage("..application.sync.plan..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "org.springframework..", "..adapters..", "..config..", "..application.repository..",
+                    "jakarta.persistence..");
 }
