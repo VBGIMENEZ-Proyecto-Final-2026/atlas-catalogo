@@ -80,6 +80,22 @@ La aplicación pide el snapshot del catálogo a la cátedra (`GET /api/synchroni
 
 Solo se reintenta ante fallas transitorias (error de red, timeout y `503`). Un `401` o `403` indica que el token es inválido o venció y no se reintenta. No se siguen redirecciones, para no reenviar el token a otro destino. El resto de las variables `CATEDRA_*` (Redis y Kafka) las declara cada cliente cuando se implementa.
 
+### Cliente Redis de la cátedra
+
+La aplicación lee de Redis lo que la cátedra publica para la sincronización incremental: la metadata de versiones (`catedra:sync:metadata`), los cambios de cada versión (`catedra:sync:changes:{versión}`) y el estado vigente de las entidades afectadas (los Hashes `professional-categories`, `professionals` y `weekly-schedules`). Solo hace lecturas puntuales sobre `catedra:sync:*`; nunca escribe ni toca `catedra:holds:*` ni el namespace privado. El cliente entrega los datos tal cual: decidir qué hacer con ellos es tarea de la sincronización incremental. Con las cuatro variables obligatorias faltantes no arranca y el mensaje dice cuál falta; la conexión es perezosa, así que la aplicación arranca aunque Redis no responda (y `/actuator/health` no incluye a Redis, para que una caída de la cátedra no marque al servicio como caído).
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `CATEDRA_REDIS_HOST` | sí | Host de Redis de la cátedra. |
+| `CATEDRA_REDIS_PORT` | sí | Puerto (1 a 65535). |
+| `CATEDRA_REDIS_USERNAME` | sí | Usuario ACL de la integración técnica. |
+| `CATEDRA_REDIS_PASSWORD` | sí | Contraseña. No se escribe en logs ni mensajes. Si se rota, se cambia en el `.env`. |
+| `CATEDRA_REDIS_CONNECT_TIMEOUT` | no | Timeout de conexión. Por defecto `3s`. |
+| `CATEDRA_REDIS_COMMAND_TIMEOUT` | no | Timeout de cada comando. Por defecto `5s`. |
+| `CATEDRA_REDIS_MAX_RETRIES` | no | Reintentos tras el primer intento. Por defecto `2`, con espera de 200 ms que se duplica hasta 2 s. |
+
+Solo se reintenta ante fallas de conexión y de tiempo. Una credencial o un permiso rechazado (`WRONGPASS`, `NOAUTH`, `NOPERM`) no se reintenta. No se usa TLS: la referencia de integración no lo contempla. Las demás variables `CATEDRA_REDIS_*` del `.env.example` (los namespaces) las usará quien escriba en el namespace privado, que este cliente no hace.
+
 ### Sincronización completa al arrancar
 
 Con la base vacía (sin versión local en `sync_state`), al terminar de arrancar la aplicación ejecuta `ApplySnapshot` con el motivo `BASE_VACIA`: pide el snapshot a la cátedra y lo aplica en una sola transacción, con la fila de `sync_state` tomada con `FOR UPDATE` (dos corridas no se pisan). Lo que ya no viene en el snapshot se deshabilita, nunca se borra, y la versión local queda igual a la del snapshot. Si algo falla, la transacción se revierte, `sync_state` queda en `ERROR` con un código (`CATEDRA_NO_DISPONIBLE`, `CATEDRA_CREDENCIAL_RECHAZADA`, `CATEDRA_RESPUESTA_INVALIDA` o `SNAPSHOT_NO_APLICABLE`) y la aplicación sigue arrancada. Con una versión local no se pide nada.
@@ -97,6 +113,7 @@ Con la base vacía (sin versión local en `sync_state`), al terminar de arrancar
 - `AtlasCatalogoApplicationTests`: arranca la aplicación contra PostgreSQL con Testcontainers y consulta `/actuator/health`. Necesita un motor de contenedores.
 - `PersistenciaCatalogoTest` y `CandadoSyncStateTest`: esquema, entidades, *upserts* y candado contra PostgreSQL real.
 - `CatedraRestSnapshotSourceTest` y `CatedraPropertiesTest`: el cliente REST contra un servidor local que simula a la cátedra (snapshot, errores, reintentos, timeouts) y la validación de las variables al arrancar. No llaman a la cátedra real.
+- `CatedraRedisChangeSourceTest` y `CatedraRedisPropertiesTest`: el cliente Redis contra un Redis real (Testcontainers) con un usuario ACL que solo lee `catedra:sync:*` (metadata, cambios, entidades, datos inválidos, Redis caído, credencial y permisos rechazados) y la validación de las variables al arrancar.
 - `SincronizacionCompletaTest` y `ArranqueConSincronizacionTest`: la sincronización completa contra PostgreSQL real con la cátedra simulada (inicialización, reconstrucción, bajas, repetición, *rollback*, errores por código, corridas en paralelo y arranque con y sin versión local).
 - `ArquitecturaTest`: reglas de dependencia de ArchUnit (ADR 0003).
 
@@ -114,7 +131,7 @@ Paquete base `ar.edu.um.atlas`, según el [ADR 0003](https://github.com/VBGIMENE
 | Paquete | Contenido |
 |---|---|
 | `domain` | Entidades JPA y reglas puras; sin Spring |
-| `application` | Casos de uso (`sync`); `port.out` (puertos hacia la cátedra) y `repository` (Spring Data) |
+| `application` | Casos de uso (`sync`); `port.out` (puertos hacia la cátedra: snapshot y cambios) y `repository` (Spring Data) |
 | `adapters.in` | Arranque (`startup`), web y Kafka |
-| `adapters.out` | Clientes REST y Redis de la cátedra |
+| `adapters.out` | Clientes REST (`rest`) y Redis (`redis`) de la cátedra |
 | `config` | Configuración de Spring |

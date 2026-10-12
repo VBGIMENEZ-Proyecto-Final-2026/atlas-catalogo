@@ -12,6 +12,11 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  data:
+    redis:
+      # Los repositorios son todos de JPA; Redis solo se lee con el cliente de la cátedra.
+      repositories:
+        enabled: false
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -24,6 +29,15 @@ catedra:
     read-timeout: ${CATEDRA_REST_READ_TIMEOUT:30s}
     retry:
       max-retries: ${CATEDRA_REST_MAX_RETRIES:2}
+  redis:
+    host: ${CATEDRA_REDIS_HOST:}
+    port: ${CATEDRA_REDIS_PORT:}
+    username: ${CATEDRA_REDIS_USERNAME:}
+    password: ${CATEDRA_REDIS_PASSWORD:}
+    connect-timeout: ${CATEDRA_REDIS_CONNECT_TIMEOUT:3s}
+    command-timeout: ${CATEDRA_REDIS_COMMAND_TIMEOUT:5s}
+    retry:
+      max-retries: ${CATEDRA_REDIS_MAX_RETRIES:2}
 
 atlas:
   sync:
@@ -35,6 +49,10 @@ management:
     web:
       exposure:
         include: health
+  health:
+    redis:
+      # Si Redis de la cátedra cae, el servicio sigue sirviendo la copia local: no debe figurar como DOWN.
+      enabled: false
   endpoint:
     health:
       show-details: never
