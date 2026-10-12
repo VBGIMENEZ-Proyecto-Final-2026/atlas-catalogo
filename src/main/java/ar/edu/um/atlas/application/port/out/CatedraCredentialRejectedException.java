@@ -1,8 +1,9 @@
 package ar.edu.um.atlas.application.port.out;
 
 /**
- * La cátedra respondió {@code 401} o {@code 403}: el token es inválido o venció. Se rota en el
- * {@code .env} (ADR 0001); reintentar no sirve.
+ * La cátedra rechazó la credencial: REST respondió {@code 401} o {@code 403} (el token es inválido o venció),
+ * o Redis respondió {@code WRONGPASS}, {@code NOAUTH} o {@code NOPERM}. Se rota en el {@code .env}
+ * (ADR 0001); reintentar no sirve.
  */
 public final class CatedraCredentialRejectedException extends CatalogSourceException {
 

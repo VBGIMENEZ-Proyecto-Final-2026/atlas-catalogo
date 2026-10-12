@@ -33,4 +33,14 @@ class ArquitecturaTest {
     static final ArchRule adaptadoresAislados = slices()
             .matching("..adapters.(*)..")
             .should().notDependOnEachOther();
+
+    @ArchTest
+    static final ArchRule redisNoDependeDeRestNiDeEntrada = noClasses()
+            .that().resideInAPackage("..adapters.out.redis..")
+            .should().dependOnClassesThat().resideInAnyPackage("..adapters.out.rest..", "..adapters.in..");
+
+    @ArchTest
+    static final ArchRule restNoDependeDeRedis = noClasses()
+            .that().resideInAPackage("..adapters.out.rest..")
+            .should().dependOnClassesThat().resideInAnyPackage("..adapters.out.redis..", "..adapters.in..");
 }

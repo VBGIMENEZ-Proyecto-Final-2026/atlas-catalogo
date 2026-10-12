@@ -1,8 +1,9 @@
 package ar.edu.um.atlas.application.port.out;
 
 /**
- * Falla al obtener el catálogo de la cátedra. Se decide por {@code status} y {@code code}, nunca por
- * el texto de {@code detail} (referencia de integración, 13). Los mensajes no incluyen secretos.
+ * Falla al obtener el catálogo de la cátedra, por REST o por Redis. Se decide por {@code status} y
+ * {@code code}, nunca por el texto de {@code detail} (referencia de integración, 13). Los mensajes no
+ * incluyen secretos. En Redis no hay respuesta HTTP: {@code status} y {@code code} son {@code null}.
  */
 public abstract sealed class CatalogSourceException extends RuntimeException
         permits CatedraUnavailableException, CatedraCredentialRejectedException, CatedraInvalidResponseException {
@@ -16,7 +17,7 @@ public abstract sealed class CatalogSourceException extends RuntimeException
         this.code = code;
     }
 
-    /** Estado HTTP de la respuesta, o {@code null} si no hubo respuesta. */
+    /** Estado HTTP de la respuesta, o {@code null} si no hubo respuesta (o si la fuente es Redis). */
     public Integer getStatus() {
         return status;
     }
