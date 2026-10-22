@@ -25,6 +25,11 @@ class AtlasCatalogoApplicationTests {
     }
 
     @Test
+    void elEndpointDeEstadoDeLaSincronizacionEstaApagadoPorDefecto() throws Exception {
+        mockMvc.perform(get("/api/sync/status")).andExpect(status().isNotFound());
+    }
+
+    @Test
     void saludResponde() throws Exception {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())

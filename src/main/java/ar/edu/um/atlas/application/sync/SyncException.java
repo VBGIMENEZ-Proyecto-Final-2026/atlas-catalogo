@@ -16,4 +16,16 @@ public class SyncException extends RuntimeException {
     public SyncErrorCode getErrorCode() {
         return errorCode;
     }
+
+    /**
+     * Describe una falla para el log sin exponer secretos: el código funcional y la clase de la causa (nunca
+     * su mensaje, que puede traer detalles de la integración). Para cualquier otra excepción, su clase.
+     */
+    public static String describe(Throwable failure) {
+        if (failure instanceof SyncException s) {
+            Throwable cause = s.getCause();
+            return s.errorCode + (cause == null ? "" : ", causa " + cause.getClass().getSimpleName());
+        }
+        return failure.getClass().getSimpleName();
+    }
 }

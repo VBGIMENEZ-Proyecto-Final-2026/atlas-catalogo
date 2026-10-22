@@ -31,6 +31,7 @@ class FuenteDeCambiosDePrueba implements CatalogChangeSource {
     private final AtomicInteger lecturasDeMetadata = new AtomicInteger();
     private volatile RuntimeException fallaDeMetadata;
     private volatile RuntimeException fallaDeCambios;
+    private final Map<Long, RuntimeException> fallasPorVersion = new ConcurrentHashMap<>();
     private volatile CountDownLatch entro;
     private volatile CountDownLatch freno;
 
@@ -61,6 +62,15 @@ class FuenteDeCambiosDePrueba implements CatalogChangeSource {
 
     void fallarCambios(RuntimeException falla) {
         this.fallaDeCambios = falla;
+    }
+
+    /** Solo el pedido de los cambios de esa versión falla; las demás se leen normalmente. */
+    void fallarCambiosDeLaVersion(long version, RuntimeException falla) {
+        if (falla == null) {
+            fallasPorVersion.remove(version);
+        } else {
+            fallasPorVersion.put(version, falla);
+        }
     }
 
     /** El próximo pedido de cambios avisa por {@code entro} y espera hasta que se libere {@code freno}. */
@@ -99,6 +109,7 @@ class FuenteDeCambiosDePrueba implements CatalogChangeSource {
         lecturasDeMetadata.set(0);
         fallaDeMetadata = null;
         fallaDeCambios = null;
+        fallasPorVersion.clear();
         entro = null;
         freno = null;
         cambios.clear();
@@ -136,6 +147,10 @@ class FuenteDeCambiosDePrueba implements CatalogChangeSource {
         }
         if (fallaDeCambios != null) {
             throw fallaDeCambios;
+        }
+        RuntimeException fallaDeLaVersion = fallasPorVersion.get(version);
+        if (fallaDeLaVersion != null) {
+            throw fallaDeLaVersion;
         }
         return Optional.ofNullable(cambios.get(version));
     }

@@ -3,6 +3,7 @@ package ar.edu.um.atlas.config;
 import ar.edu.um.atlas.adapters.in.kafka.CatalogUpdatedListener;
 import ar.edu.um.atlas.adapters.in.kafka.ResilientConsumerLifecycle;
 import ar.edu.um.atlas.application.sync.SyncCatalog;
+import ar.edu.um.atlas.application.sync.SyncException;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.config.SaslConfigs;
@@ -111,10 +112,12 @@ class CatedraKafkaConfig {
         backOff.setMultiplier(retry.multiplier());
         backOff.setMaxInterval(Math.max(retry.delay().toMillis(), 30_000));
         var handler = new DefaultErrorHandler((record, exception) ->
-                // Sin el valor del mensaje: solo de dónde vino y la clase de la falla.
+                // Sin el valor del mensaje: solo de dónde vino y el código de la falla. El contenedor envuelve
+                // la excepción del listener, así que se describe la causa.
                 log.error("Se agotaron los intentos con el mensaje {}-{}@{} ({}): se descarta y la verificación "
                                 + "periódica reintenta", record.topic(), record.partition(), record.offset(),
-                        exception.getClass().getSimpleName()), backOff);
+                        SyncException.describe(exception.getCause() != null ? exception.getCause() : exception)),
+                backOff);
         handler.setCommitRecovered(true);
         return handler;
     }

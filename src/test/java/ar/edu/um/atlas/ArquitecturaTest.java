@@ -52,6 +52,11 @@ class ArquitecturaTest {
                     "jakarta.persistence..");
 
     @ArchTest
+    static final ArchRule laWebSoloTraduceYNoTocaRepositoriosNiPersistencia = noClasses()
+            .that().resideInAPackage("..adapters.in.web..")
+            .should().dependOnClassesThat().resideInAnyPackage("..application.repository..", "jakarta.persistence..");
+
+    @ArchTest
     static final ArchRule kafkaNoDependeDeOtrosAdaptadoresNiDeConfig = noClasses()
             .that().resideInAPackage("..adapters.in.kafka..")
             .should().dependOnClassesThat().resideInAnyPackage("..adapters.out..", "..config..",

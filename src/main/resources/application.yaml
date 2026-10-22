@@ -61,6 +61,9 @@ atlas:
     check-interval: ${ATLAS_SYNC_CHECK_INTERVAL:60s}
     # Máximo de versiones que se aplican en una corrida; si faltan más, la siguiente verificación continúa.
     max-versions-per-run: ${ATLAS_SYNC_MAX_VERSIONS_PER_RUN:1000}
+    # Estado de la sincronización (GET /api/sync/status). Apagado hasta que exista la seguridad base.
+    status-endpoint:
+      enabled: ${ATLAS_SYNC_STATUS_ENDPOINT:false}
     kafka:
       # Consumidor del aviso CatalogUpdated: otro disparador de la sincronización.
       enabled: ${ATLAS_SYNC_KAFKA_ENABLED:true}
