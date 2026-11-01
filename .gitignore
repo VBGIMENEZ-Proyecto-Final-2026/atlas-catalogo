@@ -4,6 +4,8 @@
 !.env.example
 *.pem
 *.key
+# Única clave versionada: la PÚBLICA de prueba de los tests de contexto (la privada se descartó al generarla).
+!src/test/resources/jwt-test-public.pem
 *.jks
 
 # IDE
