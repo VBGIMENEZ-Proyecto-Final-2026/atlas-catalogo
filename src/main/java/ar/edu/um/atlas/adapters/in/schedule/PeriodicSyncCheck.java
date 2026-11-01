@@ -28,7 +28,7 @@ public class PeriodicSyncCheck implements Runnable {
             syncCatalog.run(SyncTrigger.VERIFICACION_PERIODICA);
         } catch (SyncException e) {
             // Ya quedó registrada en sync_state; la próxima verificación lo reintenta.
-            log.warn("La verificación periódica falló ({})", e.getErrorCode());
+            log.warn("La verificación periódica falló ({})", SyncException.describe(e));
         } catch (RuntimeException e) {
             log.error("La verificación periódica falló de forma inesperada: {}", e.getClass().getSimpleName());
         }

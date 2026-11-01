@@ -429,6 +429,37 @@ class SincronizacionIncrementalTest {
     }
 
     @Test
+    void siRedisFallaALaMitadDeVariasVersionesQuedanLasAplicadasYLaSiguienteContinua() {
+        redis.metadata(3, 1);
+        redis.publicar(2, List.of(), List.of(profesional(1, 1, "Ana", NUEVO)), List.of());
+        redis.publicar(3, List.of(), List.of(profesional(2, 1, "Berta", NUEVO)), List.of());
+        redis.fallarCambiosDeLaVersion(3, new CatedraUnavailableException("sin respuesta", null, null, null));
+
+        assertThatThrownBy(() -> syncCatalog.run(SyncTrigger.VERIFICACION_PERIODICA))
+                .isInstanceOfSatisfying(SyncException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(SyncErrorCode.CATEDRA_NO_DISPONIBLE));
+
+        // La versión 2 quedó completa; la 3 no se tocó: la copia es consistente, sin estado a medias.
+        assertThat(estado().get("local_version")).isEqualTo(2L);
+        assertThat(estado().get("status")).isEqualTo("ERROR");
+        assertThat(jdbc.sql("SELECT first_name FROM professional WHERE id = 1").query(String.class).single())
+                .isEqualTo("Ana");
+        assertThat(jdbc.sql("SELECT first_name FROM professional WHERE id = 2").query(String.class).single())
+                .isEqualTo("Nombre 2");
+        assertThat(snapshots.pedidos()).isZero();
+
+        // Redis vuelve: la siguiente verificación retoma desde la versión 3 y limpia el error.
+        redis.fallarCambiosDeLaVersion(3, null);
+        syncCatalog.run(SyncTrigger.VERIFICACION_PERIODICA);
+
+        assertThat(estado().get("local_version")).isEqualTo(3L);
+        assertThat(estado().get("status")).isEqualTo("IDLE");
+        assertThat(estado().get("last_error_code")).isNull();
+        assertThat(jdbc.sql("SELECT first_name FROM professional WHERE id = 2").query(String.class).single())
+                .isEqualTo("Berta");
+    }
+
+    @Test
     void unaCredencialRechazadaAlLeerLosCambiosDejaElErrorSinAvanzarNiEscalar() {
         redis.metadata(2, 1);
         redis.fallarCambios(new CatedraCredentialRejectedException("rechazada", null, null, null));

@@ -1,6 +1,7 @@
 package ar.edu.um.atlas.adapters.in.startup;
 
 import ar.edu.um.atlas.application.sync.SyncCatalog;
+import ar.edu.um.atlas.application.sync.SyncException;
 import ar.edu.um.atlas.application.sync.SyncTrigger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,8 +31,7 @@ public class SyncOnStartup {
         } catch (RuntimeException e) {
             // Nunca tumba el arranque. Si fue una falla de integración, ya quedó registrada en sync_state.
             log.error("La sincronización de arranque falló ({}); la aplicación sigue arrancada",
-                    e instanceof ar.edu.um.atlas.application.sync.SyncException s ? s.getErrorCode() : e.getClass()
-                            .getSimpleName());
+                    SyncException.describe(e));
         }
     }
 }
