@@ -67,6 +67,9 @@ atlas:
     kafka:
       # Consumidor del aviso CatalogUpdated: otro disparador de la sincronización.
       enabled: ${ATLAS_SYNC_KAFKA_ENABLED:true}
+  search:
+    # Búsqueda de profesionales (GET /api/professionals y /api/categories). Apagada hasta que exista la seguridad base.
+    enabled: ${ATLAS_SEARCH_ENDPOINT:false}
 
 management:
   endpoints:

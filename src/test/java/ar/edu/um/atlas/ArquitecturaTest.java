@@ -61,4 +61,11 @@ class ArquitecturaTest {
             .that().resideInAPackage("..adapters.in.kafka..")
             .should().dependOnClassesThat().resideInAnyPackage("..adapters.out..", "..config..",
                     "..adapters.in.startup..", "..adapters.in.schedule..");
+
+    /** La búsqueda se resuelve solo con la copia local: no puede llegar a ningún cliente de la cátedra. */
+    @ArchTest
+    static final ArchRule laBusquedaNoLlegaALaCatedra = noClasses()
+            .that().resideInAPackage("..application.search..")
+            .should().dependOnClassesThat().resideInAnyPackage("..application.port.out..", "..adapters..",
+                    "..application.sync..");
 }

@@ -11,10 +11,10 @@ Versión básica de la Isla 1 · Eolia. **Hoy hace:**
 - Lo mantiene al día con los cambios incrementales de Redis, avisado por Kafka y con una verificación periódica.
 - Se recupera solo de las fallas de la cátedra, de Redis y de Kafka, sin dejar la copia a medias.
 - Informa su estado en `GET /api/sync/status` (apagado por defecto hasta que exista la seguridad base).
-- Tiene el filtro de disponibilidad de profesionales (`AvailabilityFilter`), todavía sin endpoint.
+- Busca profesionales sobre la copia local por categoría, nombre, estado habilitado y disponibilidad, con detalle y horarios (`GET /api/professionals`; apagado por defecto hasta que exista la seguridad base).
 - Permite autenticar la conexión a Kafka (SASL) por configuración, sin tocar código.
 
-**Todavía no hace:** la API de búsqueda y filtros y la seguridad de la API (JWT). Los endpoints expuestos son `GET /actuator/health` y, solo si se enciende, `GET /api/sync/status`. El avance y lo que falta están en el [backlog de la isla](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/backlog/isla-1-eolia.md).
+**Todavía no hace:** la seguridad de la API (JWT) ni la API de lectura para `cronos-turnos`. El único endpoint siempre expuesto es `GET /actuator/health`; la búsqueda y el estado de la sincronización están apagados por defecto. El avance y lo que falta están en el [backlog de la isla](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/backlog/isla-1-eolia.md).
 
 ## Arquitectura
 
@@ -113,6 +113,7 @@ Las variables de entorno se declaran en `.env.example` (versionado, con placehol
 | `ATLAS_SYNC_CHECK_INTERVAL` | `60s` | Espera entre verificaciones (fija: nunca se superponen). |
 | `ATLAS_SYNC_MAX_VERSIONS_PER_RUN` | `1000` | Máximo de versiones que se aplican en una corrida; si faltan más, la siguiente verificación continúa. |
 | `ATLAS_SYNC_KAFKA_ENABLED` | `true` | Consumidor del aviso `CatalogUpdated`. Con `false` no se crea y no se exigen sus variables. |
+| `ATLAS_SEARCH_ENDPOINT` | `false` | Con `true` expone la búsqueda (`GET /api/professionals`, `GET /api/professionals/{id}` y `GET /api/categories`); apagado, las rutas responden `404`. Mismo cuidado que el estado: no está protegido hasta la seguridad base. |
 | `ATLAS_SYNC_STATUS_ENDPOINT` | `false` | Con `true` expone `GET /api/sync/status`; apagado, la ruta responde `404`. No encenderlo donde pueda llegar alguien que no deba ver el estado: no está protegido hasta la seguridad base. |
 | `CATEDRA_KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` | Solo se admite `PLAINTEXT` o `SASL_SSL`; lo normal es no definirla y activar el perfil `kafka-sasl`. |
 | `CATEDRA_KAFKA_SASL_JAAS_CONFIG` | — | Obligatoria solo con `SASL_SSL`: `org.apache.kafka.common.security.plain.PlainLoginModule required username="..." password="...";`. Solo por variable de entorno o `.env`. |
@@ -132,6 +133,33 @@ Un solo caso de uso, `SyncCatalog`, mantiene la copia al día. Tiene tres dispar
 - **Idempotente:** repetir un snapshot, una versión o un aviso deja la copia igual. Una sola corrida a la vez (candado en la base).
 
 El detalle (planificador, transacciones, idempotencia, matriz de fallas y recuperación, estado y limitaciones) está en [**la estrategia de sincronización**](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/sincronizacion-atlas-catalogo.md).
+
+## Búsqueda de profesionales
+
+Se resuelve **solo con la copia local**: ninguna búsqueda consulta a la cátedra (una regla de ArchUnit lo comprueba: `application.search` no puede depender de los clientes ni de la sincronización). Se enciende con `ATLAS_SEARCH_ENDPOINT=true`.
+
+| Ruta | Qué devuelve |
+|---|---|
+| `GET /api/professionals` | Página de profesionales con su categoría. |
+| `GET /api/professionals/{id}` | Un profesional con todos sus horarios semanales (habilitados o no, cada uno con su estado), ordenados por día y hora. También devuelve a un profesional deshabilitado, con `enabled: false`. |
+| `GET /api/categories` | Categorías por nombre, para elegir una al filtrar. |
+
+Filtros de `GET /api/professionals`, todos opcionales y combinables con "y":
+
+| Parámetro | Efecto |
+|---|---|
+| `categoryId` | Profesionales de esa categoría. |
+| `name` | Texto contenido en "nombre apellido", sin distinguir mayúsculas (hasta 100 caracteres). No ignora tildes, y los comodines `%` y `_` se tratan como texto. |
+| `enabled` | `true` o `false`: estado habilitado del profesional (filtro literal). |
+| `available` | `true`: disponibles (profesional y categoría habilitados y al menos un horario semanal habilitado). `false`: los que no lo están. Es independiente de `enabled`. |
+| `dayOfWeek` | `MONDAY` ... `SUNDAY`; solo junto con `available`: el horario habilitado debe ser de ese día. |
+| `page`, `size` | Página desde 0 y tamaño de 1 a 100 (por defecto `0` y `20`). El orden es fijo: apellido, nombre e ID. |
+
+"Disponible" significa que el profesional atiende, no que le queden turnos libres: eso depende de las ocupaciones de la cátedra y se resuelve en `cronos-turnos`. Un parámetro inválido responde `400` con código `BUSQUEDA_INVALIDA`, un ID inexistente `404` (`PROFESIONAL_NO_ENCONTRADO`) y la base caída `503` (`CATALOGO_NO_DISPONIBLE`), siempre como `application/problem+json` y sin repetir el valor recibido.
+
+```bash
+curl 'localhost:8080/api/professionals?name=ana&available=true&dayOfWeek=MONDAY&size=10'
+```
 
 ## Base de datos
 
@@ -157,6 +185,8 @@ Los tests de integración usan PostgreSQL, Redis y Kafka reales en contenedores 
 | `CatalogUpdatedParserTest`, `ResilientConsumerLifecycleTest`, `CatedraKafkaPropertiesTest`, `PerfilKafkaSaslTest`, `ConsumidorKafkaTest`, `ConsumidorKafkaInaccesibleTest` | El consumidor de Kafka: interpretación del mensaje, arranque resiliente, variables y, contra un Kafka real, eventos nuevos, duplicados, corruptos, fallas y Kafka inaccesible. |
 | `EstadoSincronizacionTest`, `RecuperacionSincronizacionTest`, `SyncStatusControllerTest` | Estado de la sincronización (`GET /api/sync/status`, `503` si la base no responde) y falla y recuperación de punta a punta. |
 | `DisponibilidadTest` | Filtro de disponibilidad: sin horarios, horarios deshabilitados, otro día y sin duplicados. |
+| `BusquedaProfesionalesTest`, `ProfessionalSearchCriteriaTest` | Búsqueda contra PostgreSQL real: cada filtro y sus combinaciones, comodines, orden y paginación, detalle, categorías y validación de parámetros. |
+| `ProfessionalsControllerTest`, `BusquedaApagadaPorDefectoTest` | Los parámetros, el JSON y los errores `400`, `404` y `503` de la búsqueda, y que apagada responde `404`. |
 | `ArquitecturaTest` | Reglas de dependencia de ArchUnit ([ADR 0003](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/adr/0003-arquitectura.md)). |
 
 ## Estructura de paquetes
@@ -166,14 +196,14 @@ Paquete base `ar.edu.um.atlas`, hexagonal liviana ([ADR 0003](https://github.com
 | Paquete | Contenido |
 |---|---|
 | `domain` | Entidades JPA y reglas puras; sin Spring |
-| `application` | Casos de uso: `search` (filtro de disponibilidad), `sync` (`SyncCatalog`, `ApplySnapshot`, `ApplyIncremental`) con el planificador puro en `sync.plan`; `port.out` (puertos hacia la cátedra: snapshot y cambios) y `repository` (Spring Data) |
-| `adapters.in` | Disparadores: arranque (`startup`), periódico (`schedule`) y aviso de Kafka (`kafka`); y la API web (`web`), por ahora solo el estado de la sincronización. La búsqueda llega después |
+| `application` | Casos de uso: `search` (búsqueda, detalle, categorías y filtro de disponibilidad), `sync` (`SyncCatalog`, `ApplySnapshot`, `ApplyIncremental`) con el planificador puro en `sync.plan`; `port.out` (puertos hacia la cátedra: snapshot y cambios) y `repository` (Spring Data) |
+| `adapters.in` | Disparadores: arranque (`startup`), periódico (`schedule`) y aviso de Kafka (`kafka`); y la API web (`web`): búsqueda y estado de la sincronización |
 | `adapters.out` | Clientes de la cátedra: REST (`rest`) y Redis (`redis`) |
 | `config` | Configuración de Spring: propiedades, clientes y disparadores |
 
 ## Seguridad
 
-Los secretos salen del entorno, ninguno se escribe en logs ni mensajes, el cliente REST no sigue redirecciones, Redis se usa en solo lectura y los datos que vienen de afuera se validan al entrar. **La seguridad de la API (JWT, CORS, 401/403) todavía no está implementada**: por eso `GET /api/sync/status` está apagado por defecto. Decisiones, estado y limitaciones en [**seguridad de atlas-catalogo**](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/seguridad-atlas-catalogo.md).
+Los secretos salen del entorno, ninguno se escribe en logs ni mensajes, el cliente REST no sigue redirecciones, Redis se usa en solo lectura y los datos que vienen de afuera se validan al entrar. **La seguridad de la API (JWT, CORS, 401/403) todavía no está implementada**: por eso la búsqueda y `GET /api/sync/status` están apagados por defecto. Decisiones, estado y limitaciones en [**seguridad de atlas-catalogo**](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/seguridad-atlas-catalogo.md).
 
 ## Documentación
 
