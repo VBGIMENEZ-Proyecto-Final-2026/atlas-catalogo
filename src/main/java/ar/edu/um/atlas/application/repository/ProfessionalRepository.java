@@ -2,13 +2,16 @@ package ar.edu.um.atlas.application.repository;
 
 import ar.edu.um.atlas.domain.Professional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 
-public interface ProfessionalRepository extends JpaRepository<Professional, Long> {
+/** Acepta {@code Specification} para que los filtros de búsqueda se combinen sin una consulta por cada uno. */
+public interface ProfessionalRepository
+        extends JpaRepository<Professional, Long>, JpaSpecificationExecutor<Professional> {
 
     /** Inserta o actualiza por ID; repetirlo no duplica ni falla (decisión B). */
     default void upsert(Professional p) {
