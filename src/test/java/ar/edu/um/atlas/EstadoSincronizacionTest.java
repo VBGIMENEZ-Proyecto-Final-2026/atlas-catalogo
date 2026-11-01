@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 /**
  * El estado de la sincronización informado por {@code GET /api/sync/status} contra PostgreSQL real, con la
@@ -73,9 +74,14 @@ class EstadoSincronizacionTest {
                 """).update();
     }
 
+    /** Un administrador por petición (no por hilo): la seguridad en sí se prueba en SeguridadApiTest. */
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor admin() {
+        return user("root").roles("ADMIN");
+    }
+
     @Test
     void conLaBaseVaciaInformaSinVersionNiResultado() throws Exception {
-        mockMvc.perform(get("/api/sync/status"))
+        mockMvc.perform(get("/api/sync/status").with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.localVersion").value((Object) null))
                 .andExpect(jsonPath("$.status").value("IDLE"))
@@ -90,7 +96,7 @@ class EstadoSincronizacionTest {
 
         syncCatalog.run(SyncTrigger.ARRANQUE);
 
-        mockMvc.perform(get("/api/sync/status"))
+        mockMvc.perform(get("/api/sync/status").with(admin()))
                 .andExpect(jsonPath("$.localVersion").value(1))
                 .andExpect(jsonPath("$.status").value("IDLE"))
                 .andExpect(jsonPath("$.lastResult").value("SNAPSHOT"))
@@ -107,14 +113,14 @@ class EstadoSincronizacionTest {
         redis.metadata(2, 1);
         redis.publicar(2, List.of(), List.of(profesional(1, "Ana")), List.of());
         syncCatalog.run(SyncTrigger.VERIFICACION_PERIODICA);
-        mockMvc.perform(get("/api/sync/status"))
+        mockMvc.perform(get("/api/sync/status").with(admin()))
                 .andExpect(jsonPath("$.localVersion").value(2))
                 .andExpect(jsonPath("$.lastResult").value("INCREMENTAL"))
                 // El motivo del último snapshot se conserva: describe cómo se armó la copia de base.
                 .andExpect(jsonPath("$.lastSnapshotReason").value("BASE_VACIA"));
 
         syncCatalog.run(SyncTrigger.VERIFICACION_PERIODICA);
-        mockMvc.perform(get("/api/sync/status"))
+        mockMvc.perform(get("/api/sync/status").with(admin()))
                 .andExpect(jsonPath("$.localVersion").value(2))
                 .andExpect(jsonPath("$.lastResult").value("NOOP"));
     }
@@ -129,7 +135,7 @@ class EstadoSincronizacionTest {
         assertThatThrownBy(() -> syncCatalog.run(SyncTrigger.VERIFICACION_PERIODICA))
                 .isInstanceOf(SyncException.class);
 
-        String cuerpo = mockMvc.perform(get("/api/sync/status"))
+        String cuerpo = mockMvc.perform(get("/api/sync/status").with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.localVersion").value(1))
                 .andExpect(jsonPath("$.status").value("ERROR"))
@@ -152,7 +158,7 @@ class EstadoSincronizacionTest {
         redis.metadata(1, 1);
         syncCatalog.run(SyncTrigger.VERIFICACION_PERIODICA);
 
-        mockMvc.perform(get("/api/sync/status"))
+        mockMvc.perform(get("/api/sync/status").with(admin()))
                 .andExpect(jsonPath("$.status").value("IDLE"))
                 .andExpect(jsonPath("$.lastResult").value("NOOP"))
                 .andExpect(jsonPath("$.lastError").value((Object) null));
@@ -176,7 +182,7 @@ class EstadoSincronizacionTest {
             // Si la consulta tomara el candado quedaría esperando a la corrida: el tope la hace fallar y no colgarse.
             CompletableFuture<String> consulta = CompletableFuture.supplyAsync(() -> {
                 try {
-                    return mockMvc.perform(get("/api/sync/status")).andExpect(status().isOk())
+                    return mockMvc.perform(get("/api/sync/status").with(admin())).andExpect(status().isOk())
                             .andReturn().getResponse().getContentAsString();
                 } catch (Exception e) {
                     throw new IllegalStateException(e);
@@ -189,7 +195,7 @@ class EstadoSincronizacionTest {
         }
         corrida.get(30, TimeUnit.SECONDS);
 
-        mockMvc.perform(get("/api/sync/status")).andExpect(jsonPath("$.localVersion").value(7));
+        mockMvc.perform(get("/api/sync/status").with(admin())).andExpect(jsonPath("$.localVersion").value(7));
     }
 
     @Test

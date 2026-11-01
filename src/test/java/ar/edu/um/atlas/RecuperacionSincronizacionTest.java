@@ -28,6 +28,7 @@ import java.util.function.Predicate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 /**
  * Falla y recuperación de punta a punta, con la verificación periódica corriendo de verdad y el estado leído
@@ -51,6 +52,11 @@ class RecuperacionSincronizacionTest {
     @Autowired FuenteDeSnapshotDePrueba snapshots;
     @Autowired FuenteDeCambiosDePrueba redis;
     @Autowired JdbcClient jdbc;
+
+    /** Un administrador por petición (no por hilo): la seguridad en sí se prueba en SeguridadApiTest. */
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor admin() {
+        return user("root").roles("ADMIN");
+    }
 
     @Test
     void laAplicacionSeRecuperaSolaDeLaCaidaDeRedisDeLaCatedraYDeUnaFallaAlAplicar() throws Exception {
@@ -117,7 +123,7 @@ class RecuperacionSincronizacionTest {
     private JsonNode esperarEstado(Predicate<JsonNode> condicion) {
         JsonNode[] ultimo = new JsonNode[1];
         await().ignoreExceptions().atMost(Duration.ofSeconds(30)).pollInterval(Duration.ofMillis(100)).until(() -> {
-            String cuerpo = mockMvc.perform(get("/api/sync/status")).andReturn().getResponse().getContentAsString();
+            String cuerpo = mockMvc.perform(get("/api/sync/status").with(admin())).andReturn().getResponse().getContentAsString();
             ultimo[0] = JSON.readTree(cuerpo);
             return condicion.test(ultimo[0]);
         });

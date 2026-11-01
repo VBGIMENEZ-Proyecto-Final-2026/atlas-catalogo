@@ -25,7 +25,7 @@ class ArquitecturaTest {
     static final ArchRule aplicacionSinAdaptadores = noClasses()
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                    "..adapters..", "..config..", "org.springframework.web..",
+                    "..adapters..", "..config..", "org.springframework.web..", "org.springframework.security..",
                     "org.springframework.kafka..", "org.springframework.data.redis..",
                     "tools.jackson..", "com.fasterxml.jackson..");
 
@@ -68,4 +68,10 @@ class ArquitecturaTest {
             .that().resideInAPackage("..application.search..")
             .should().dependOnClassesThat().resideInAnyPackage("..application.port.out..", "..adapters..",
                     "..application.sync..");
+
+    /** La seguridad HTTP no conoce el dominio ni los casos de uso: solo traduce rechazos a respuestas. */
+    @ArchTest
+    static final ArchRule laSeguridadNoDependeDelNegocio = noClasses()
+            .that().resideInAPackage("..adapters.in.security..")
+            .should().dependOnClassesThat().resideInAnyPackage("..domain..", "..application..", "..adapters.in.web..");
 }

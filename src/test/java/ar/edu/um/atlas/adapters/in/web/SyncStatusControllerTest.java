@@ -7,6 +7,7 @@ import ar.edu.um.atlas.domain.SyncResult;
 import ar.edu.um.atlas.domain.SyncStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
@@ -28,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * El controlador solo traduce el estado a JSON y la falla de la base a {@code problem+json}. El estado real
  * contra PostgreSQL está en {@code EstadoSincronizacionTest}.
  */
+@AutoConfigureMockMvc(addFilters = false) // la seguridad se prueba aparte, en SeguridadApiTest
 @WebMvcTest(controllers = SyncStatusController.class, properties = "atlas.sync.status-endpoint.enabled=true")
 class SyncStatusControllerTest {
 

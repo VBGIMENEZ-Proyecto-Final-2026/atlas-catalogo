@@ -61,15 +61,25 @@ atlas:
     check-interval: ${ATLAS_SYNC_CHECK_INTERVAL:60s}
     # Máximo de versiones que se aplican en una corrida; si faltan más, la siguiente verificación continúa.
     max-versions-per-run: ${ATLAS_SYNC_MAX_VERSIONS_PER_RUN:1000}
-    # Estado de la sincronización (GET /api/sync/status). Apagado hasta que exista la seguridad base.
+    # Estado de la sincronización (GET /api/sync/status), solo para ROLE_ADMIN.
     status-endpoint:
-      enabled: ${ATLAS_SYNC_STATUS_ENDPOINT:false}
+      enabled: ${ATLAS_SYNC_STATUS_ENDPOINT:true}
     kafka:
       # Consumidor del aviso CatalogUpdated: otro disparador de la sincronización.
       enabled: ${ATLAS_SYNC_KAFKA_ENABLED:true}
+  security:
+    jwt:
+      # Clave pública RSA (PEM X.509) con la que cronos-turnos firma los JWT: un archivo o el PEM en la variable. Una de las dos.
+      public-key-location: ${ATLAS_JWT_PUBLIC_KEY_LOCATION:}
+      public-key: ${ATLAS_JWT_PUBLIC_KEY:}
+      authorities-claim: ${ATLAS_JWT_AUTHORITIES_CLAIM:auth}
+      clock-skew: ${ATLAS_JWT_CLOCK_SKEW:60s}
+    cors:
+      # Orígenes permitidos separados por coma (esquema://host[:puerto]); vacío = ninguno.
+      allowed-origins: ${ATLAS_CORS_ALLOWED_ORIGINS:}
   search:
-    # Búsqueda de profesionales (GET /api/professionals y /api/categories). Apagada hasta que exista la seguridad base.
-    enabled: ${ATLAS_SEARCH_ENDPOINT:false}
+    # Búsqueda de profesionales (GET /api/professionals y /api/categories), para ROLE_USER o ROLE_ADMIN.
+    enabled: ${ATLAS_SEARCH_ENDPOINT:true}
 
 management:
   endpoints:

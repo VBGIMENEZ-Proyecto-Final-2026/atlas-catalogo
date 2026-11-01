@@ -13,6 +13,7 @@ import ar.edu.um.atlas.application.search.SearchProfessionals;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
@@ -40,6 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * El controlador solo traduce parámetros a criterios y resultados a JSON, y los errores a
  * {@code problem+json}. Los filtros reales contra PostgreSQL están en {@code BusquedaProfesionalesTest}.
  */
+@AutoConfigureMockMvc(addFilters = false) // la seguridad se prueba aparte, en SeguridadApiTest
 @WebMvcTest(controllers = ProfessionalsController.class, properties = "atlas.search.enabled=true")
 class ProfessionalsControllerTest {
 

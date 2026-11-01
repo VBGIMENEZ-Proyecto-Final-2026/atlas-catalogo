@@ -10,11 +10,12 @@ Versión básica de la Isla 1 · Eolia. **Hoy hace:**
 - Lo inicializa y lo reconstruye desde el snapshot REST de la cátedra.
 - Lo mantiene al día con los cambios incrementales de Redis, avisado por Kafka y con una verificación periódica.
 - Se recupera solo de las fallas de la cátedra, de Redis y de Kafka, sin dejar la copia a medias.
-- Informa su estado en `GET /api/sync/status` (apagado por defecto hasta que exista la seguridad base).
-- Busca profesionales sobre la copia local por categoría, nombre, estado habilitado y disponibilidad, con detalle y horarios (`GET /api/professionals`; apagado por defecto hasta que exista la seguridad base).
+- Informa su estado en `GET /api/sync/status` (solo para administradores).
+- Busca profesionales sobre la copia local por categoría, nombre, estado habilitado y disponibilidad, con detalle y horarios (`GET /api/professionals`).
 - Permite autenticar la conexión a Kafka (SASL) por configuración, sin tocar código.
+- Protege la API: valida los JWT que emite `cronos-turnos` (RS256, clave pública), exige un rol por ruta y responde `401` y `403` como `problem+json`; CORS por lista de orígenes.
 
-**Todavía no hace:** la seguridad de la API (JWT) ni la API de lectura para `cronos-turnos`. El único endpoint siempre expuesto es `GET /actuator/health`; la búsqueda y el estado de la sincronización están apagados por defecto. El avance y lo que falta están en el [backlog de la isla](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/backlog/isla-1-eolia.md).
+**Todavía no hace:** la API de lectura para `cronos-turnos` ni emitir tokens (los emite `cronos-turnos`, que todavía no existe: para probar se usa una clave de desarrollo, ver "Probar la API"). Fuera de `GET /actuator/health`, todo exige un token válido. El avance y lo que falta están en el [backlog de la isla](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/backlog/isla-1-eolia.md).
 
 ## Arquitectura
 
@@ -54,7 +55,8 @@ cd atlas-catalogo
 git checkout dev                 # rama de integración
 
 cp .env.example .env             # una sola vez; .env está ignorado por git
-# Editar .env: ATLAS_DB_PASSWORD y los valores CATEDRA_* de la cuenta técnica
+# Editar .env: ATLAS_DB_PASSWORD, los valores CATEDRA_* de la cuenta técnica y la clave pública JWT
+# (ATLAS_JWT_PUBLIC_KEY_LOCATION; para desarrollo, ver "Probar la API")
 
 docker compose up -d             # base local; esperar a que figure "healthy" (docker compose ps)
 ./gradlew build                  # compila, corre los tests y las reglas de arquitectura
@@ -81,6 +83,30 @@ export TESTCONTAINERS_RYUK_DISABLED=true
 
 **Apagar la base:** `docker compose down` conserva los datos; `docker compose down -v` los borra. La base solo escucha en `127.0.0.1` (puerto 5433 por defecto). No usar H2, SQLite ni bases embebidas: las migraciones de este servicio son propias y no tocan la base del otro.
 
+## Probar la API
+
+Todo lo que no sea `GET /actuator/health` exige un JWT firmado por `cronos-turnos`, que atlas solo puede verificar con su **clave pública**. Mientras `cronos-turnos` no exista, se usa un par de claves de **desarrollo**, que nunca se commitea ni se usa fuera de la máquina local:
+
+```bash
+mkdir -p ~/.atlas-dev && cd ~/.atlas-dev
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out dev-private.pem   # solo para firmar tokens de prueba
+openssl pkey -in dev-private.pem -pubout -out dev-public.pem                          # esta es la que lee atlas
+# En .env:  ATLAS_JWT_PUBLIC_KEY_LOCATION=/home/<usuario>/.atlas-dev/dev-public.pem
+
+cd -                                                                                  # de vuelta en atlas-catalogo
+./gradlew bootRun &                                                                   # o en otra terminal
+
+TOKEN=$(scripts/dev-token.sh ~/.atlas-dev/dev-private.pem ana ROLE_USER)             # usuario con ROLE_USER
+ADMIN=$(scripts/dev-token.sh ~/.atlas-dev/dev-private.pem root ROLE_ADMIN)           # administrador
+
+curl -i localhost:8080/api/categories                                  # 401 NO_AUTENTICADO (sin token)
+curl -i -H "Authorization: Bearer $TOKEN" localhost:8080/api/categories    # 200
+curl -i -H "Authorization: Bearer $TOKEN" localhost:8080/api/sync/status   # 403 SIN_PERMISO (pide ROLE_ADMIN)
+curl -i -H "Authorization: Bearer $ADMIN" localhost:8080/api/sync/status   # 200
+```
+
+`scripts/dev-token.sh` firma con RS256 un token con `sub`, `auth` (roles separados por espacio, como JHipster), `iat` y `exp` (una hora; `DEV_TOKEN_TTL=<segundos>` lo cambia). Cada rechazo queda en el log con el método, la ruta y, en un `403`, el usuario; nunca con el token.
+
 ## Configuración
 
 Las variables de entorno se declaran en `.env.example` (versionado, con placeholders). La aplicación lee el `.env` local (`spring.config.import`) o, si no existe, las variables de entorno reales. Los valores `CATEDRA_*` salen de la respuesta de la cuenta técnica de la cátedra y son los mismos en los dos backends. **Nunca commitear `.env`, tokens ni IPs.** Si falta una variable obligatoria, la aplicación no arranca y el mensaje dice cuál. Las variables del `.env.example` que no aparecen acá (`CATEDRA_GROUP_ID`, los namespaces de Redis y los topics de reservas) no las usa este servicio.
@@ -90,6 +116,7 @@ Las variables de entorno se declaran en `.env.example` (versionado, con placehol
 | Variable | Descripción |
 |---|---|
 | `ATLAS_DB_PASSWORD` | Contraseña de la base local. |
+| `ATLAS_JWT_PUBLIC_KEY_LOCATION` o `ATLAS_JWT_PUBLIC_KEY` | Clave **pública** RSA (PEM X.509, 2048 bits o más) con la que `cronos-turnos` firma los JWT: una ruta de archivo (`file:`, `classpath:` o ruta simple) o el PEM en la variable, con los saltos de línea como `\n`. Solo una de las dos. Sin clave la aplicación no arranca. |
 | `CATEDRA_REST_BASE_URL` | URL base de la API de la cátedra (`http` o `https`). |
 | `CATEDRA_ID_TOKEN` | JWT técnico de la cátedra. No se escribe en logs ni mensajes; si vence, se rota en el `.env`. |
 | `CATEDRA_REDIS_HOST`, `CATEDRA_REDIS_PORT`, `CATEDRA_REDIS_USERNAME`, `CATEDRA_REDIS_PASSWORD` | Redis de la cátedra (usuario ACL de la integración, solo lectura). |
@@ -113,8 +140,11 @@ Las variables de entorno se declaran en `.env.example` (versionado, con placehol
 | `ATLAS_SYNC_CHECK_INTERVAL` | `60s` | Espera entre verificaciones (fija: nunca se superponen). |
 | `ATLAS_SYNC_MAX_VERSIONS_PER_RUN` | `1000` | Máximo de versiones que se aplican en una corrida; si faltan más, la siguiente verificación continúa. |
 | `ATLAS_SYNC_KAFKA_ENABLED` | `true` | Consumidor del aviso `CatalogUpdated`. Con `false` no se crea y no se exigen sus variables. |
-| `ATLAS_SEARCH_ENDPOINT` | `false` | Con `true` expone la búsqueda (`GET /api/professionals`, `GET /api/professionals/{id}` y `GET /api/categories`); apagado, las rutas responden `404`. Mismo cuidado que el estado: no está protegido hasta la seguridad base. |
-| `ATLAS_SYNC_STATUS_ENDPOINT` | `false` | Con `true` expone `GET /api/sync/status`; apagado, la ruta responde `404`. No encenderlo donde pueda llegar alguien que no deba ver el estado: no está protegido hasta la seguridad base. |
+| `ATLAS_SEARCH_ENDPOINT` | `true` | Expone la búsqueda (`GET /api/professionals`, `GET /api/professionals/{id}` y `GET /api/categories`); con `false` las rutas no existen: `404` con un token válido y `401` sin token. |
+| `ATLAS_SYNC_STATUS_ENDPOINT` | `true` | Expone `GET /api/sync/status` (solo `ROLE_ADMIN`); con `false` la ruta no existe (`404` para un administrador). |
+| `ATLAS_JWT_AUTHORITIES_CLAIM` | `auth` | Claim del token con las autoridades (texto con espacios o lista). `auth` es el de JHipster. |
+| `ATLAS_JWT_CLOCK_SKEW` | `60s` | Tolerancia de reloj al validar `exp` y `nbf`, hasta 5 minutos. |
+| `ATLAS_CORS_ALLOWED_ORIGINS` | vacío | Orígenes permitidos, separados por coma, cada uno `esquema://host[:puerto]` sin comodines. Vacío: no se acepta ninguno. Solo `GET` y `OPTIONS`, sin credenciales. |
 | `CATEDRA_KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` | Solo se admite `PLAINTEXT` o `SASL_SSL`; lo normal es no definirla y activar el perfil `kafka-sasl`. |
 | `CATEDRA_KAFKA_SASL_JAAS_CONFIG` | — | Obligatoria solo con `SASL_SSL`: `org.apache.kafka.common.security.plain.PlainLoginModule required username="..." password="...";`. Solo por variable de entorno o `.env`. |
 
@@ -136,7 +166,7 @@ El detalle (planificador, transacciones, idempotencia, matriz de fallas y recupe
 
 ## Búsqueda de profesionales
 
-Se resuelve **solo con la copia local**: ninguna búsqueda consulta a la cátedra (una regla de ArchUnit lo comprueba: `application.search` no puede depender de los clientes ni de la sincronización). Se enciende con `ATLAS_SEARCH_ENDPOINT=true`.
+Se resuelve **solo con la copia local**: ninguna búsqueda consulta a la cátedra (una regla de ArchUnit lo comprueba: `application.search` no puede depender de los clientes ni de la sincronización). Pide un token con `ROLE_USER` o `ROLE_ADMIN` (ver "Seguridad") y se puede apagar con `ATLAS_SEARCH_ENDPOINT=false`.
 
 | Ruta | Qué devuelve |
 |---|---|
@@ -158,7 +188,7 @@ Filtros de `GET /api/professionals`, todos opcionales y combinables con "y":
 "Disponible" significa que el profesional atiende, no que le queden turnos libres: eso depende de las ocupaciones de la cátedra y se resuelve en `cronos-turnos`. Un parámetro inválido responde `400` con código `BUSQUEDA_INVALIDA`, un ID inexistente `404` (`PROFESIONAL_NO_ENCONTRADO`) y la base caída `503` (`CATALOGO_NO_DISPONIBLE`), siempre como `application/problem+json` y sin repetir el valor recibido.
 
 ```bash
-curl 'localhost:8080/api/professionals?name=ana&available=true&dayOfWeek=MONDAY&size=10'
+curl -H "Authorization: Bearer $TOKEN" 'localhost:8080/api/professionals?name=ana&available=true&dayOfWeek=MONDAY&size=10'
 ```
 
 ## Base de datos
@@ -186,7 +216,10 @@ Los tests de integración usan PostgreSQL, Redis y Kafka reales en contenedores 
 | `EstadoSincronizacionTest`, `RecuperacionSincronizacionTest`, `SyncStatusControllerTest` | Estado de la sincronización (`GET /api/sync/status`, `503` si la base no responde) y falla y recuperación de punta a punta. |
 | `DisponibilidadTest` | Filtro de disponibilidad: sin horarios, horarios deshabilitados, otro día y sin duplicados. |
 | `BusquedaProfesionalesTest`, `ProfessionalSearchCriteriaTest` | Búsqueda contra PostgreSQL real: cada filtro y sus combinaciones, comodines, orden y paginación, detalle, categorías y validación de parámetros. |
-| `ProfessionalsControllerTest`, `BusquedaApagadaPorDefectoTest` | Los parámetros, el JSON y los errores `400`, `404` y `503` de la búsqueda, y que apagada responde `404`. |
+| `ProfessionalsControllerTest`, `BusquedaApagadaTest` | Los parámetros, el JSON y los errores `400`, `404` y `503` de la búsqueda, y que apagada responde `404` (sin filtros de seguridad: eso se prueba aparte). |
+| `SeguridadApiTest` | La seguridad con la aplicación completa y firmas RS256 reales: `401` sin token y con tokens inválidos (vencido, firma ajena, payload adulterado, `HS256` con la clave pública como secreto, `alg: none`, sin `exp` o `sub`), `403` por rol, rutas desconocidas denegadas y el rechazo en el log sin el token. |
+| `CorsApiTest`, `CorsPorDefectoTest` | CORS: solo los orígenes configurados, solo lectura, sin credenciales; sin configuración no se acepta ninguno. |
+| `SecurityPropertiesTest`, `JwtPublicKeysTest` | Las propiedades de seguridad y la carga de la clave pública (archivo, variable, clave privada o corta rechazadas). |
 | `ArquitecturaTest` | Reglas de dependencia de ArchUnit ([ADR 0003](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/adr/0003-arquitectura.md)). |
 
 ## Estructura de paquetes
@@ -197,13 +230,27 @@ Paquete base `ar.edu.um.atlas`, hexagonal liviana ([ADR 0003](https://github.com
 |---|---|
 | `domain` | Entidades JPA y reglas puras; sin Spring |
 | `application` | Casos de uso: `search` (búsqueda, detalle, categorías y filtro de disponibilidad), `sync` (`SyncCatalog`, `ApplySnapshot`, `ApplyIncremental`) con el planificador puro en `sync.plan`; `port.out` (puertos hacia la cátedra: snapshot y cambios) y `repository` (Spring Data) |
-| `adapters.in` | Disparadores: arranque (`startup`), periódico (`schedule`) y aviso de Kafka (`kafka`); y la API web (`web`): búsqueda y estado de la sincronización |
+| `adapters.in` | Disparadores: arranque (`startup`), periódico (`schedule`) y aviso de Kafka (`kafka`); la API web (`web`): búsqueda y estado de la sincronización; y los rechazos de seguridad (`security`) |
 | `adapters.out` | Clientes de la cátedra: REST (`rest`) y Redis (`redis`) |
-| `config` | Configuración de Spring: propiedades, clientes y disparadores |
+| `config` | Configuración de Spring: propiedades, clientes, disparadores y seguridad (`SecurityConfig`) |
 
 ## Seguridad
 
-Los secretos salen del entorno, ninguno se escribe en logs ni mensajes, el cliente REST no sigue redirecciones, Redis se usa en solo lectura y los datos que vienen de afuera se validan al entrar. **La seguridad de la API (JWT, CORS, 401/403) todavía no está implementada**: por eso la búsqueda y `GET /api/sync/status` están apagados por defecto. Decisiones, estado y limitaciones en [**seguridad de atlas-catalogo**](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/seguridad-atlas-catalogo.md).
+atlas es un **servidor de recursos**: valida los JWT que emite `cronos-turnos` con su clave pública (RS256) y no guarda usuarios ni puede firmar tokens (ADR de autenticación entre servicios, opción A: se propaga el JWT del usuario).
+
+| Ruta | Acceso |
+|---|---|
+| `GET /actuator/health` | Público, sin detalles. |
+| `GET /api/professionals`, `GET /api/professionals/{id}`, `GET /api/categories` | `ROLE_USER` o `ROLE_ADMIN`. |
+| `GET /api/sync/status` | `ROLE_ADMIN`: muestra errores internos de la sincronización. |
+| Todo lo demás (otros métodos, rutas desconocidas, otros endpoints de Actuator) | Denegado: `401` sin token, `403` con uno válido. |
+
+- **Qué se valida:** firma RS256 con la clave pública (se rechazan `HS256`, `none` y cualquier otro algoritmo), vigencia (`exp` y `nbf`, con tolerancia de 60 s) y que existan `sub` y `exp`. Los permisos salen del claim `auth` (texto con espacios o lista, como JHipster) y se toman tal cual: ya traen `ROLE_`.
+- **Respuestas:** `401 NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`) y `403 SIN_PERMISO` como `application/problem+json`. No dicen por qué se rechazó el token ni qué rol faltaba. Cada rechazo queda en el log con el método y la ruta, y el usuario en el `403`; nunca el token.
+- **Sin sesión ni cookies:** el token va en `Authorization: Bearer`, por eso CSRF no aplica y está desactivado. Ninguna decisión depende de un identificador enviado por el cliente.
+- **CORS:** solo los orígenes de `ATLAS_CORS_ALLOWED_ORIGINS`, solo `GET` y `OPTIONS`, sin credenciales. La app Android no es un navegador y no lo necesita.
+- **Secretos:** la clave pública no es secreta; la privada solo la tiene `cronos-turnos`. Los secretos salen del entorno, ninguno se escribe en logs ni mensajes, el cliente REST no sigue redirecciones, Redis se usa en solo lectura y los datos que vienen de afuera se validan al entrar.
+- **Límites:** no se valida el emisor (`iss`) ni la audiencia (`aud`), y rotar la clave exige reiniciar atlas. Decisiones y limitaciones completas en [**seguridad de atlas-catalogo**](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/seguridad-atlas-catalogo.md).
 
 ## Documentación
 
