@@ -8,8 +8,12 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.time.LocalTime;
+import java.util.List;
 
 public interface WeeklyScheduleRepository extends JpaRepository<WeeklySchedule, Long> {
+
+    /** Todos los horarios del profesional, habilitados o no; el orden lo da quien los muestra. */
+    List<WeeklySchedule> findByProfessionalId(Long professionalId);
 
     /** Inserta o actualiza por ID; repetirlo no duplica ni falla (decisión B). */
     default void upsert(WeeklySchedule s) {
