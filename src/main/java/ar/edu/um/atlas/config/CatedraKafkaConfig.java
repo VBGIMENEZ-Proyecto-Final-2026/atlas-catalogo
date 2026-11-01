@@ -3,7 +3,9 @@ package ar.edu.um.atlas.config;
 import ar.edu.um.atlas.adapters.in.kafka.CatalogUpdatedListener;
 import ar.edu.um.atlas.adapters.in.kafka.ResilientConsumerLifecycle;
 import ar.edu.um.atlas.application.sync.SyncCatalog;
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +28,8 @@ import java.util.Map;
 /**
  * Arma el consumidor del aviso {@code CatalogUpdated}: un contenedor de un solo hilo (el topic tiene una
  * partición) con confirmación manual, un mensaje por vez y reintentos acotados. No usa {@code spring.kafka.*}:
- * las propiedades son las propias de {@link CatedraKafkaProperties}. Solo existe si
+ * las propiedades son las propias de {@link CatedraKafkaProperties} (incluida la seguridad, que por defecto es
+ * {@code PLAINTEXT} y con el perfil {@code kafka-sasl} pasa a {@code SASL_SSL}). Solo existe si
  * {@code atlas.sync.kafka.enabled} es verdadero (por defecto sí); los tests de contexto lo apagan.
  *
  * <p>La aplicación arranca aunque Kafka no responda: si los servidores existen pero no contestan, el cliente
@@ -45,6 +48,10 @@ class CatedraKafkaConfig {
 
     @Bean
     ConsumerFactory<String, String> catalogConsumerFactory(CatedraKafkaProperties properties) {
+        return new DefaultKafkaConsumerFactory<>(consumerConfig(properties));
+    }
+
+    static Map<String, Object> consumerConfig(CatedraKafkaProperties properties) {
         Map<String, Object> config = new HashMap<>();
         config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, properties.bootstrapServers().strip());
         config.put(ConsumerConfig.GROUP_ID_CONFIG, properties.consumerGroupId().strip());
@@ -61,7 +68,13 @@ class CatedraKafkaConfig {
         config.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, (int) MAX_POLL_INTERVAL.toMillis());
         // Nunca crear el topic de la cátedra desde un consumidor.
         config.put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, false);
-        return new DefaultKafkaConsumerFactory<>(config);
+        config.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, properties.securityProtocol());
+        if (properties.usaSasl()) {
+            // El JAAS lleva usuario y contraseña: el cliente lo registra como [hidden] al volcar su configuración.
+            config.put(SaslConfigs.SASL_MECHANISM, "PLAIN");
+            config.put(SaslConfigs.SASL_JAAS_CONFIG, properties.saslJaasConfig());
+        }
+        return config;
     }
 
     @Bean

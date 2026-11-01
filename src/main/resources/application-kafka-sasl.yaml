@@ -1,0 +1,5 @@
+# Perfil opcional: solo se activa (SPRING_PROFILES_ACTIVE=kafka-sasl) si la cátedra exige autenticación en Kafka.
+# El usuario y la contraseña van únicamente en CATEDRA_KAFKA_SASL_JAAS_CONFIG, nunca en este archivo.
+catedra:
+  kafka:
+    security-protocol: SASL_SSL

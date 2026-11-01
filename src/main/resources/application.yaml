@@ -45,6 +45,9 @@ catedra:
     bootstrap-servers: ${CATEDRA_KAFKA_BOOTSTRAP_SERVERS:}
     catalog-topic: ${CATEDRA_KAFKA_CATALOG_TOPIC:}
     consumer-group-id: ${CATEDRA_KAFKA_CONSUMER_GROUP_ID:}
+    # PLAINTEXT por defecto; el perfil kafka-sasl (application-kafka-sasl.yaml) lo cambia a SASL_SSL.
+    security-protocol: ${CATEDRA_KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+    sasl-jaas-config: ${CATEDRA_KAFKA_SASL_JAAS_CONFIG:}
     start-retry-interval: ${CATEDRA_KAFKA_START_RETRY_INTERVAL:10s}
     retry:
       max-attempts: ${CATEDRA_KAFKA_MAX_ATTEMPTS:3}
