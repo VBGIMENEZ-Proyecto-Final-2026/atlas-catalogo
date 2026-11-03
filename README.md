@@ -15,11 +15,14 @@ Versión básica de la Isla 1 · Eolia. **Hoy hace:**
 - Permite autenticar la conexión a Kafka (SASL) por configuración, sin tocar código.
 - Protege la API: valida los JWT que emite `cronos-turnos` (RS256, clave pública), exige un rol por ruta y responde `401` y `403` como `problem+json`; CORS por lista de orígenes.
 
-**Todavía no hace:** la API de lectura para `cronos-turnos` ni emitir tokens (los emite `cronos-turnos`, que todavía no existe: para probar se usa una clave de desarrollo, ver "Probar la API"). Fuera de `GET /actuator/health`, todo exige un token válido. El avance y lo que falta están en el [backlog de la isla](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/backlog/isla-1-eolia.md).
+- Corre en contenedores: Dockerfile y servicio `app` en el `compose.yaml` (ver "Todo en contenedores").
+- Tiene su contrato con `cronos-turnos` documentado: [operaciones, DTO, autenticación y errores](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/contratos/atlas-catalogo-api.md).
+
+**Todavía no hace:** emitir tokens (los emite `cronos-turnos`, que todavía no existe: para probar se usa una clave de desarrollo, ver "Probar la API"). Fuera de `GET /actuator/health`, todo exige un token válido. El avance y lo que falta están en el [backlog de la isla](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/backlog/isla-1-eolia.md).
 
 ## Arquitectura
 
-El servicio lee de la cátedra (snapshot por REST, metadata y cambios en Redis, avisos por Kafka), guarda la copia local en su propia base y expone búsqueda y agenda por una API protegida con JWT (esta parte todavía no está implementada).
+El servicio lee de la cátedra (snapshot por REST, metadata y cambios en Redis, avisos por Kafka), guarda la copia local en su propia base y expone búsqueda y agenda por una API protegida con JWT.
 
 ```text
    ┌─────────────── Cátedra ───────────────┐
@@ -82,6 +85,24 @@ export TESTCONTAINERS_RYUK_DISABLED=true
 ```
 
 **Apagar la base:** `docker compose down` conserva los datos; `docker compose down -v` los borra. La base solo escucha en `127.0.0.1` (puerto 5433 por defecto). No usar H2, SQLite ni bases embebidas: las migraciones de este servicio son propias y no tocan la base del otro.
+
+## Todo en contenedores
+
+Además de la base, la aplicación puede correr en un contenedor (imagen de dos etapas: compila con JDK 25 y ejecuta con un JRE 25, como usuario sin privilegios). El servicio `app` del `compose.yaml` solo arranca con el perfil `app`, así el flujo de desarrollo de arriba no cambia.
+
+```bash
+# En .env hace falta ATLAS_JWT_PUBLIC_KEY_LOCATION con la ruta de la clave PÚBLICA (un archivo .pem).
+docker compose --profile app up -d --build     # compila la imagen y levanta la base y la aplicación
+docker compose ps                              # atlas-app debe figurar "healthy" (tarda unos 40 s)
+curl localhost:8080/actuator/health            # {"status":"UP", ...}
+docker compose --profile app down              # apaga ambos; los datos se conservan
+```
+
+- La aplicación lee el mismo `.env`; el compose solo pisa lo que cambia dentro de la red de Compose (`ATLAS_DB_HOST=db`, `ATLAS_DB_PORT=5432`) y monta la clave pública en `/run/secrets/jwt-public.pem` (solo lectura). La imagen no lleva secretos: `.dockerignore` excluye `.env` y las claves.
+- Con el perfil `app` el puerto 8080 queda ocupado: no se puede correr a la vez `./gradlew bootRun`.
+- El montaje de la clave lleva `:z` para hosts con SELinux (Fedora); etiqueta el `.pem` público y donde no hay SELinux se ignora.
+- Solo funciona con la clave en un archivo; la variante `ATLAS_JWT_PUBLIC_KEY` (el PEM en la variable) no aplica al contenedor.
+- Los tests no corren dentro de la imagen (necesitan Testcontainers): se corren con `./gradlew build` en la máquina.
 
 ## Probar la API
 
@@ -250,6 +271,19 @@ atlas es un **servidor de recursos**: valida los JWT que emite `cronos-turnos` c
 - **Sin sesión ni cookies:** el token va en `Authorization: Bearer`, por eso CSRF no aplica y está desactivado. Ninguna decisión depende de un identificador enviado por el cliente.
 - **CORS:** solo los orígenes de `ATLAS_CORS_ALLOWED_ORIGINS`, solo `GET` y `OPTIONS`, sin credenciales. La app Android no es un navegador y no lo necesita.
 - **Secretos:** la clave pública no es secreta; la privada solo la tiene `cronos-turnos`. Los secretos salen del entorno, ninguno se escribe en logs ni mensajes, el cliente REST no sigue redirecciones, Redis se usa en solo lectura y los datos que vienen de afuera se validan al entrar.
+- **Cifrado del canal (TLS):** por defecto atlas escucha en HTTP y solo en la red local, y el compose publica el puerto en `127.0.0.1`. Para HTTPS no hace falta tocar código: Spring Boot lo activa con un almacén de claves PKCS12, por variables de entorno (verificado en el contenedor con TLS 1.3; el puerto responde `400` a una petición HTTP plana).
+
+  ```bash
+  keytool -genkeypair -alias atlas -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore keystore.p12 \
+    -dname "CN=localhost" -ext "san=dns:localhost,ip:127.0.0.1" -validity 30   # certificado de prueba
+  # En .env (con bootRun):
+  # SERVER_SSL_KEY_STORE=/ruta/a/keystore.p12
+  # SERVER_SSL_KEY_STORE_PASSWORD=<la contraseña del almacén>
+  # SERVER_SSL_KEY_STORE_TYPE=PKCS12
+  curl --cacert <certificado> https://localhost:8080/actuator/health
+  ```
+
+  El almacén y su contraseña son secretos: no se commitean (`*.p12` y `*.jks` se ignoran). En producción el certificado lo firmaría una autoridad reconocida; el de prueba es autofirmado.
 - **Límites:** no se valida el emisor (`iss`) ni la audiencia (`aud`), y rotar la clave exige reiniciar atlas. Decisiones y limitaciones completas en [**seguridad de atlas-catalogo**](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/seguridad-atlas-catalogo.md).
 
 ## Documentación
@@ -264,5 +298,6 @@ Todo vive en [alejandria-docs](https://github.com/VBGIMENEZ-Proyecto-Final-2026/
 | [Modelo de datos](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/modelo-datos/atlas-catalogo.md) | Tablas, reglas y decisiones A a L |
 | [Estrategia de sincronización](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/sincronizacion-atlas-catalogo.md) | Cómo funciona, idempotencia y recuperación |
 | [Seguridad](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/arquitectura/seguridad-atlas-catalogo.md) | Decisiones, estado y limitaciones |
+| [Contrato con cronos-turnos](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/contratos/atlas-catalogo-api.md) | Operaciones, DTO, autenticación y errores |
 | [Evolución de la implementación](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/blob/main/alejandria-docs/implementacion/atlas-catalogo.md) | Qué se decidió al implementar cada issue, con porqué y costo |
 | [Evidencias](https://github.com/VBGIMENEZ-Proyecto-Final-2026/biblioteca-alejandria/tree/main/alejandria-docs/evidencias) | Verificaciones contra la cátedra real, sin secretos |
