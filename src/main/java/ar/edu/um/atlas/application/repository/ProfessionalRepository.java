@@ -36,7 +36,7 @@ public interface ProfessionalRepository
                 @Param("createdAt") Instant createdAt, @Param("updatedAt") Instant updatedAt);
 
     /**
-     * Deshabilita las filas habilitadas cuyo ID no está en {@code ids} (nunca borra, decisión C). Con un
+     * Deshabilita las filas habilitadas cuyo ID no está en {@code ids} (nunca borra, requisito M3). Con un
      * arreglo vacío deshabilita todas. No toca {@code updated_at}: son valores de la cátedra (decisión J).
      */
     @Modifying
@@ -44,8 +44,8 @@ public interface ProfessionalRepository
     int disableAllExcept(@Param("ids") Long[] ids);
 
     /**
-     * Deshabilita las filas habilitadas cuyo ID está en {@code ids} (baja por ID ausente en Redis, decisión
-     * C). No toca {@code updated_at}: son valores de la cátedra (decisión J).
+     * Deshabilita las filas habilitadas cuyo ID está en {@code ids} (baja por ID ausente en Redis, requisito
+     * M3). No toca {@code updated_at}: son valores de la cátedra (decisión J).
      */
     @Modifying
     @Query(nativeQuery = true, value = "UPDATE professional SET enabled = false WHERE enabled AND id = ANY (:ids)")

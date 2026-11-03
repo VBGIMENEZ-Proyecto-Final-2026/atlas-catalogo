@@ -1,0 +1,14 @@
+# Nada de esto entra a la imagen. Lo importante: .env y las claves (secretos).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.jks
+.git
+.github
+.gradle
+build
+.idea
+*.iml
+README.md
